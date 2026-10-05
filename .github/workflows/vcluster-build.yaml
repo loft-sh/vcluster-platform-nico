@@ -10,10 +10,12 @@ on:
         description: vCluster build iteration (overrides vcluster/build.conf)
         required: false
   push:
+    branches:
+      - main
     tags:
       - 'v*.*.*-vcluster*'
   pull_request:
-    types: [labeled, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
 
 env:
   REGISTRY: ghcr.io/loft-sh/nico-dpf
@@ -21,34 +23,44 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name != 'pull_request' ||
-      contains(github.event.pull_request.labels.*.name, 'ci:build')
     outputs:
       version: ${{ steps.derive.outputs.version }}
       upstream_ref: ${{ steps.derive.outputs.upstream_ref }}
+      publish: ${{ steps.derive.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - id: derive
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HAS_BUILD_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:build') }}
+          INPUT_REF: ${{ inputs.upstream_ref }}
+          INPUT_ITER: ${{ inputs.vcluster_iteration }}
         run: |
           . vcluster/build.conf
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            REF="${{ github.event.pull_request.head.sha }}"
-            PRERELEASE="vcluster-test.pr${{ github.event.pull_request.number }}"
+          REF="${INPUT_REF:-$UPSTREAM_REF}"
+          PUBLISH=false
+          if [ "$EVENT" = "pull_request" ]; then
+            PRERELEASE="vcluster-test.pr${PR_NUMBER}"
+            [ "$HAS_BUILD_LABEL" = "true" ] && PUBLISH=true
           else
-            REF="${{ inputs.upstream_ref }}"; REF="${REF:-$UPSTREAM_REF}"
-            ITER="${{ inputs.vcluster_iteration }}"; ITER="${ITER:-$VCLUSTER_ITERATION}"
+            ITER="${INPUT_ITER:-$VCLUSTER_ITERATION}"
             PRERELEASE="vcluster.${ITER}"
+            case "$EVENT:$REF_NAME" in
+              workflow_dispatch:*|push:refs/heads/main|push:refs/tags/*) PUBLISH=true ;;
+            esac
           fi
           git fetch --no-tags origin "$REF" || true
           SHORT_SHA="$(git rev-parse --short=8 "$REF" 2>/dev/null || git rev-parse --short=8 FETCH_HEAD)"
           VERSION="$(BASE_VERSION="$BASE_VERSION" PRERELEASE="$PRERELEASE" SHORT_SHA="$SHORT_SHA" bash scripts/vcluster-version.sh)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "upstream_ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "Building ref $REF as $VERSION"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT ref=$REF_NAME -> version=$VERSION publish=$PUBLISH"
 
   agents:
     needs: prepare
@@ -58,6 +70,8 @@ jobs:
       packages: write
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
+      PUBLISH: ${{ needs.prepare.outputs.publish }}
+      TAG_LATEST: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,10 +102,7 @@ jobs:
             tar -zxf /tmp/mft.tgz
           fi
 
-      - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-
-      - name: Build and push agent images
+      - name: Build agent images
         run: |
           REV=$(git rev-parse HEAD)
           for n in forge-dpu-agent forge-dhcp-server carbide-fmds otelcol-contrib transceiver-exporter; do
@@ -100,5 +111,19 @@ jobs:
               --label com.vcluster.nico.upstream-ref="${{ needs.prepare.outputs.upstream_ref }}" \
               -t "${REGISTRY}/$n:${VERSION}" \
               -f "bluefield/containers/$n/Dockerfile" .
+          done
+
+      - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push agent images
+        if: env.PUBLISH == 'true'
+        run: |
+          for n in forge-dpu-agent forge-dhcp-server carbide-fmds otelcol-contrib transceiver-exporter; do
             docker push "${REGISTRY}/$n:${VERSION}"
+            if [ "$TAG_LATEST" = "true" ]; then
+              docker tag "${REGISTRY}/$n:${VERSION}" "${REGISTRY}/$n:latest"
+              docker push "${REGISTRY}/$n:latest"
+            fi
           done
