@@ -9,6 +9,11 @@ on:
       vcluster_iteration:
         description: vCluster build iteration (overrides vcluster/build.conf)
         required: false
+  push:
+    tags:
+      - 'v*.*.*-vcluster*'
+  pull_request:
+    types: [labeled, synchronize, reopened]
 
 env:
   REGISTRY: ghcr.io/loft-sh/nico-dpf
@@ -16,6 +21,9 @@ env:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'ci:build')
     outputs:
       version: ${{ steps.derive.outputs.version }}
       upstream_ref: ${{ steps.derive.outputs.upstream_ref }}
@@ -27,11 +35,17 @@ jobs:
       - id: derive
         run: |
           . vcluster/build.conf
-          REF="${{ inputs.upstream_ref }}"; REF="${REF:-$UPSTREAM_REF}"
-          ITER="${{ inputs.vcluster_iteration }}"; ITER="${ITER:-$VCLUSTER_ITERATION}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            REF="${{ github.event.pull_request.head.sha }}"
+            PRERELEASE="vcluster-test.pr${{ github.event.pull_request.number }}"
+          else
+            REF="${{ inputs.upstream_ref }}"; REF="${REF:-$UPSTREAM_REF}"
+            ITER="${{ inputs.vcluster_iteration }}"; ITER="${ITER:-$VCLUSTER_ITERATION}"
+            PRERELEASE="vcluster.${ITER}"
+          fi
           git fetch --no-tags origin "$REF" || true
           SHORT_SHA="$(git rev-parse --short=8 "$REF" 2>/dev/null || git rev-parse --short=8 FETCH_HEAD)"
-          VERSION="$(BASE_VERSION="$BASE_VERSION" VCLUSTER_ITERATION="$ITER" SHORT_SHA="$SHORT_SHA" bash scripts/vcluster-version.sh)"
+          VERSION="$(BASE_VERSION="$BASE_VERSION" PRERELEASE="$PRERELEASE" SHORT_SHA="$SHORT_SHA" bash scripts/vcluster-version.sh)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "upstream_ref=$REF" >> "$GITHUB_OUTPUT"
           echo "Building ref $REF as $VERSION"
