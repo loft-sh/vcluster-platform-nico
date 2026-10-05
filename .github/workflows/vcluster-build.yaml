@@ -1,0 +1,90 @@
+name: vcluster-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Commit, tag or branch to build (overrides vcluster/build.conf)
+        required: false
+      vcluster_iteration:
+        description: vCluster build iteration (overrides vcluster/build.conf)
+        required: false
+
+env:
+  REGISTRY: ghcr.io/loft-sh/nico-dpf
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      upstream_ref: ${{ steps.derive.outputs.upstream_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: derive
+        run: |
+          . vcluster/build.conf
+          REF="${{ inputs.upstream_ref }}"; REF="${REF:-$UPSTREAM_REF}"
+          ITER="${{ inputs.vcluster_iteration }}"; ITER="${ITER:-$VCLUSTER_ITERATION}"
+          git fetch --no-tags origin "$REF" || true
+          SHORT_SHA="$(git rev-parse --short=8 "$REF" 2>/dev/null || git rev-parse --short=8 FETCH_HEAD)"
+          VERSION="$(BASE_VERSION="$BASE_VERSION" VCLUSTER_ITERATION="$ITER" SHORT_SHA="$SHORT_SHA" bash scripts/vcluster-version.sh)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "upstream_ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Building ref $REF as $VERSION"
+
+  agents:
+    needs: prepare
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+
+      - name: Build cross toolchain image
+        run: |
+          docker build dev/docker \
+            -f dev/docker/Dockerfile.build-artifacts-container-cross-aarch64 \
+            -t build-artifacts-container-cross-aarch64:latest
+
+      - name: Cross-compile agent binaries
+        run: |
+          mkdir -p "$HOME/.cargo"
+          docker run --rm -v "$PWD":/carbide --user "$(id -u):$(id -g)" \
+            --env CARGO_HOME=/cargo -v "$HOME/.cargo":/cargo \
+            build-artifacts-container-cross-aarch64:latest \
+            cargo build --release --target=aarch64-unknown-linux-gnu \
+            --bin forge-dpu-agent --bin forge-dhcp-server --bin carbide-fmds
+
+      - name: Fetch MFT firmware
+        run: |
+          MFTDIR=$(grep -oE 'mft-[0-9.]+-[0-9]+-aarch64-deb' \
+            bluefield/containers/forge-dpu-agent/Dockerfile | head -1)
+          if [ -n "$MFTDIR" ] && [ ! -e "$MFTDIR" ]; then
+            curl -fL --retry 3 -o /tmp/mft.tgz \
+              "https://www.mellanox.com/downloads/MFT/${MFTDIR}.tgz"
+            tar -zxf /tmp/mft.tgz
+          fi
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push agent images
+        run: |
+          REV=$(git rev-parse HEAD)
+          for n in forge-dpu-agent forge-dhcp-server carbide-fmds otelcol-contrib transceiver-exporter; do
+            docker build \
+              --label org.opencontainers.image.revision="$REV" \
+              --label com.vcluster.nico.upstream-ref="${{ needs.prepare.outputs.upstream_ref }}" \
+              -t "${REGISTRY}/$n:${VERSION}" \
+              -f "bluefield/containers/$n/Dockerfile" .
+            docker push "${REGISTRY}/$n:${VERSION}"
+          done
