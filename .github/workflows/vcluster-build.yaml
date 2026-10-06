@@ -132,7 +132,7 @@ jobs:
   controller:
     needs: prepare
     runs-on: large-16_64
-    if: needs.prepare.outputs.publish == 'true'
+    if: false
     permissions:
       contents: read
       packages: write
@@ -209,10 +209,15 @@ jobs:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Install Kea dev headers
+      - name: Install build dependencies (Kea, Boost, gRPC, protobuf, …)
         run: |
           sudo apt-get update
-          sudo apt-get install -y kea-dev kea-dhcp4-server kea-dhcp6-server
+          sudo apt-get install -y \
+            kea-dev kea-dhcp4-server kea-dhcp6-server \
+            libboost-dev libgrpc-dev libgrpc++-dev libprotobuf-dev \
+            protobuf-compiler protobuf-compiler-grpc \
+            libssl-dev libudev-dev libssh-dev libaio-dev libtss2-dev libopenipmi-dev \
+            build-essential clang cmake pkg-config lld
 
       - name: Build and push boot-artifacts (x86, standalone)
         run: |
