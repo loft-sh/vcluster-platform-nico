@@ -1,0 +1,257 @@
+name: vcluster-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Commit, tag or branch to build (overrides vcluster/build.conf)
+        required: false
+      vcluster_iteration:
+        description: vCluster build iteration (overrides vcluster/build.conf)
+        required: false
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*-vcluster*'
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+env:
+  REGISTRY: ghcr.io/loft-sh/vcluster-platform-nico
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      upstream_ref: ${{ steps.derive.outputs.upstream_ref }}
+      publish: ${{ steps.derive.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: derive
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HAS_BUILD_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:build') }}
+          INPUT_REF: ${{ inputs.upstream_ref }}
+          INPUT_ITER: ${{ inputs.vcluster_iteration }}
+        run: |
+          . vcluster/build.conf
+          REF="${INPUT_REF:-$UPSTREAM_REF}"
+          PUBLISH=false
+          if [ "$EVENT" = "pull_request" ]; then
+            PRERELEASE="vcluster-test.pr${PR_NUMBER}"
+            [ "$HAS_BUILD_LABEL" = "true" ] && PUBLISH=true
+          else
+            ITER="${INPUT_ITER:-$VCLUSTER_ITERATION}"
+            PRERELEASE="vcluster.${ITER}"
+            case "$EVENT:$REF_NAME" in
+              workflow_dispatch:*|push:refs/heads/main|push:refs/tags/*) PUBLISH=true ;;
+            esac
+          fi
+          git fetch --no-tags origin "$REF" || true
+          SHORT_SHA="$(git rev-parse --short=8 "$REF" 2>/dev/null || git rev-parse --short=8 FETCH_HEAD)"
+          VERSION="$(BASE_VERSION="$BASE_VERSION" PRERELEASE="$PRERELEASE" SHORT_SHA="$SHORT_SHA" bash scripts/vcluster-version.sh)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "upstream_ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT ref=$REF_NAME -> version=$VERSION publish=$PUBLISH"
+
+  agents:
+    needs: prepare
+    runs-on: ubuntu-24.04-arm
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PUBLISH: ${{ needs.prepare.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+
+      - name: Build cross toolchain image
+        run: |
+          docker build dev/docker \
+            -f dev/docker/Dockerfile.build-artifacts-container-cross-aarch64 \
+            -t build-artifacts-container-cross-aarch64:latest
+
+      - name: Cross-compile agent binaries
+        run: |
+          mkdir -p "$HOME/.cargo"
+          docker run --rm -v "$PWD":/carbide --user "$(id -u):$(id -g)" \
+            --env CARGO_HOME=/cargo -v "$HOME/.cargo":/cargo \
+            build-artifacts-container-cross-aarch64:latest \
+            cargo build --release --target=aarch64-unknown-linux-gnu \
+            --bin forge-dpu-agent --bin forge-dhcp-server --bin carbide-fmds
+
+      - name: Fetch MFT firmware
+        run: |
+          MFTDIR=$(grep -oE 'mft-[0-9.]+-[0-9]+-aarch64-deb' \
+            bluefield/containers/forge-dpu-agent/Dockerfile | head -1)
+          if [ -n "$MFTDIR" ] && [ ! -e "$MFTDIR" ]; then
+            curl -fL --retry 3 -o /tmp/mft.tgz \
+              "https://www.mellanox.com/downloads/MFT/${MFTDIR}.tgz"
+            tar -zxf /tmp/mft.tgz
+          fi
+
+      - name: Build agent images
+        run: |
+          REV=$(git rev-parse HEAD)
+          for n in forge-dpu-agent forge-dhcp-server carbide-fmds otelcol-contrib transceiver-exporter; do
+            docker build \
+              --label org.opencontainers.image.revision="$REV" \
+              --label com.vcluster.nico.upstream-ref="${{ needs.prepare.outputs.upstream_ref }}" \
+              -t "${REGISTRY}/$n:${VERSION}" \
+              -f "bluefield/containers/$n/Dockerfile" .
+          done
+
+      - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push agent images
+        if: env.PUBLISH == 'true'
+        run: |
+          for n in forge-dpu-agent forge-dhcp-server carbide-fmds otelcol-contrib transceiver-exporter; do
+            docker push "${REGISTRY}/$n:${VERSION}"
+          done
+
+  controller:
+    needs: prepare
+    runs-on: large-16_64
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push controller (nico, amd64)
+        run: |
+          make images-core \
+            NICO_ARCHES=amd64 \
+            IMAGE_REGISTRY="${REGISTRY}" \
+            IMAGE_TAG="${VERSION}" \
+            VERSION="${VERSION}"
+
+  rest:
+    needs: prepare
+    runs-on: large-16_64
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push REST services (amd64)
+        run: |
+          make images-rest \
+            NICO_ARCHES=amd64 \
+            IMAGE_REGISTRY="${REGISTRY}" \
+            IMAGE_TAG="${VERSION}" \
+            VERSION="${VERSION}"
+
+  boot-artifacts:
+    needs: prepare
+    runs-on: large-16_64
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+          submodules: recursive
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up mkosi
+        uses: ./.github/actions/setup-mkosi-environment
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Install build dependencies (Kea, Boost, gRPC, protobuf, …)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            kea-dev kea-dhcp4-server kea-dhcp6-server \
+            libboost-dev libgrpc-dev libgrpc++-dev libprotobuf-dev \
+            protobuf-compiler protobuf-compiler-grpc \
+            libssl-dev libudev-dev libssh-dev libaio-dev libtss2-dev libopenipmi-dev \
+            build-essential clang cmake pkg-config lld
+
+      - name: Build and push boot-artifacts (x86, standalone)
+        run: |
+          make images-boot-artifacts \
+            BOOT_ARTIFACTS_ARCHES=amd64 \
+            IMAGE_REGISTRY="${REGISTRY}" \
+            IMAGE_TAG="${VERSION}" \
+            VERSION="${VERSION}"
+
+  boot-artifacts-arm:
+    needs: prepare
+    runs-on: ubuntu-24.04-arm
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+          submodules: recursive
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Stage checkout at /code so nested-docker mounts resolve on the host
+        run: |
+          sudo mkdir -p /code
+          sudo mount --bind "$GITHUB_WORKSPACE" /code
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push arm boot-artifacts (aarch64, native)
+        working-directory: /code
+        run: |
+          make images-bfb-arm \
+            IMAGE_REGISTRY="${REGISTRY}" \
+            IMAGE_TAG="${VERSION}" \
+            VERSION="${VERSION}"
