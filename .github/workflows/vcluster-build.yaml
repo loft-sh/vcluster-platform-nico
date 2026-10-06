@@ -18,7 +18,7 @@ on:
     types: [opened, synchronize, reopened, labeled]
 
 env:
-  REGISTRY: ghcr.io/loft-sh/nico-dpf
+  REGISTRY: ghcr.io/loft-sh/vcluster-platform-nico
 
 jobs:
   prepare:
