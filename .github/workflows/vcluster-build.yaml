@@ -157,6 +157,15 @@ jobs:
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
 
+      - name: Tag :latest on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          for img in nico nico-buildcontainer nico-runtime-container; do
+            src="${REGISTRY}/$img:${VERSION}"
+            docker buildx imagetools inspect "$src" >/dev/null 2>&1 || src="${REGISTRY}/$img:${VERSION}-amd64"
+            docker buildx imagetools create -t "${REGISTRY}/$img:latest" "$src"
+          done
+
   rest:
     needs: prepare
     runs-on: large-16_64
@@ -184,6 +193,15 @@ jobs:
             IMAGE_REGISTRY="${REGISTRY}" \
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
+
+      - name: Tag :latest on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          for img in nico-rest-api nico-rest-db nico-rest-cert-manager nico-rest-site-agent nico-rest-site-manager nico-rest-workflow nico-flow nico-mcp nico-nsm nico-psm; do
+            src="${REGISTRY}/$img:${VERSION}"
+            docker buildx imagetools inspect "$src" >/dev/null 2>&1 || src="${REGISTRY}/$img:${VERSION}-amd64"
+            docker buildx imagetools create -t "${REGISTRY}/$img:latest" "$src"
+          done
 
   boot-artifacts:
     needs: prepare
@@ -227,6 +245,11 @@ jobs:
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
 
+      - name: Tag :latest on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker buildx imagetools create -t "${REGISTRY}/boot-artifacts-x86_64:latest" "${REGISTRY}/boot-artifacts-x86_64:${VERSION}"
+
   boot-artifacts-arm:
     needs: prepare
     runs-on: ubuntu-24.04-arm
@@ -260,3 +283,8 @@ jobs:
             IMAGE_REGISTRY="${REGISTRY}" \
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
+
+      - name: Tag :latest on main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker buildx imagetools create -t "${REGISTRY}/boot-artifacts-aarch64:latest" "${REGISTRY}/boot-artifacts-aarch64:${VERSION}"
