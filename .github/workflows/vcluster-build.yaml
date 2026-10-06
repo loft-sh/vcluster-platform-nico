@@ -132,7 +132,7 @@ jobs:
   controller:
     needs: prepare
     runs-on: large-16_64
-    if: false
+    if: needs.prepare.outputs.publish == 'true'
     permissions:
       contents: read
       packages: write
