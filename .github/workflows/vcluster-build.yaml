@@ -72,7 +72,6 @@ jobs:
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       PUBLISH: ${{ needs.prepare.outputs.publish }}
-      TAG_LATEST: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -123,10 +122,6 @@ jobs:
         run: |
           for n in forge-dpu-agent forge-dhcp-server carbide-fmds otelcol-contrib transceiver-exporter; do
             docker push "${REGISTRY}/$n:${VERSION}"
-            if [ "$TAG_LATEST" = "true" ]; then
-              docker tag "${REGISTRY}/$n:${VERSION}" "${REGISTRY}/$n:latest"
-              docker push "${REGISTRY}/$n:latest"
-            fi
           done
 
   controller:
