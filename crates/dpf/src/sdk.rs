@@ -1679,9 +1679,12 @@ fn resolve_initialization_inventory<'a>(
         // Astra retains its established static inventory and ignores site topology policy.
         Cow::Owned(match config.deployment_type {
             DpuDeploymentType::Bf4Astra => build_astra_dpu_interfaces_vec(),
-            DpuDeploymentType::Bf3
-            | DpuDeploymentType::Bf3Gb200
-            | DpuDeploymentType::Bf4Generic => {
+            DpuDeploymentType::Bf3 | DpuDeploymentType::Bf3Gb200 => {
+                let mut interfaces = build_effective_dpu_interfaces(config.num_of_vfs, None);
+                interfaces.retain(|interface| interface.name != "pf1hpf");
+                interfaces
+            }
+            DpuDeploymentType::Bf4Generic => {
                 build_effective_dpu_interfaces(config.num_of_vfs, None)
             }
         })
