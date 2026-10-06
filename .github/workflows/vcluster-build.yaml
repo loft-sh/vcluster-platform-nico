@@ -131,7 +131,7 @@ jobs:
 
   controller:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: large-16_64
     if: needs.prepare.outputs.publish == 'true'
     permissions:
       contents: read
@@ -159,7 +159,7 @@ jobs:
 
   rest:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: large-16_64
     if: needs.prepare.outputs.publish == 'true'
     permissions:
       contents: read
@@ -187,7 +187,7 @@ jobs:
 
   boot-artifacts:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: large-16_64
     if: needs.prepare.outputs.publish == 'true'
     permissions:
       contents: read
