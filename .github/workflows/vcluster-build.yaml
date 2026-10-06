@@ -10,7 +10,7 @@ on:
         description: vCluster build iteration (overrides vcluster/build.conf)
         required: false
       only:
-        description: Comma-separated subset of jobs to build (controller,agents,rest,boot-artifacts,boot-artifacts-arm); empty = all
+        description: Comma-separated subset of jobs to build (controller,agents,rest,boot-artifacts,boot-artifacts-arm,charts); empty = all
         required: false
   push:
     branches:
@@ -281,3 +281,34 @@ jobs:
             IMAGE_REGISTRY="${REGISTRY}" \
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
+
+  charts:
+    needs: prepare
+    runs-on: ubuntu-latest
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',charts,'))
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Package and push DPU charts
+        run: |
+          CHART_VERSION="${VERSION#v}"
+          mkdir -p out
+          for c in nico-dpu-agent nico-dhcp-server nico-fmds nico-otelcol; do
+            helm dependency build "bluefield/charts/$c" || true
+            helm package "bluefield/charts/$c" --version "$CHART_VERSION" --app-version "$CHART_VERSION" -d out/
+          done
+          for tgz in out/*.tgz; do
+            helm push "$tgz" "oci://${REGISTRY}/charts"
+          done
