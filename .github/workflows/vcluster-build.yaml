@@ -9,6 +9,9 @@ on:
       vcluster_iteration:
         description: vCluster build iteration (overrides vcluster/build.conf)
         required: false
+      only:
+        description: Comma-separated subset of jobs to build (controller,agents,rest,boot-artifacts,boot-artifacts-arm,charts); empty = all
+        required: false
   push:
     branches:
       - main
@@ -27,6 +30,7 @@ jobs:
       version: ${{ steps.derive.outputs.version }}
       upstream_ref: ${{ steps.derive.outputs.upstream_ref }}
       publish: ${{ steps.derive.outputs.publish }}
+      only: ${{ steps.derive.outputs.only }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,6 +44,7 @@ jobs:
           HAS_BUILD_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:build') }}
           INPUT_REF: ${{ inputs.upstream_ref }}
           INPUT_ITER: ${{ inputs.vcluster_iteration }}
+          INPUT_ONLY: ${{ inputs.only }}
         run: |
           . vcluster/build.conf
           REF="${INPUT_REF:-$UPSTREAM_REF}"
@@ -60,12 +65,15 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "upstream_ref=$REF" >> "$GITHUB_OUTPUT"
           echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
-          echo "event=$EVENT ref=$REF_NAME -> version=$VERSION publish=$PUBLISH"
+          echo "only=${INPUT_ONLY:-}" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT ref=$REF_NAME -> version=$VERSION publish=$PUBLISH only=${INPUT_ONLY:-<all>}"
 
   agents:
     needs: prepare
     runs-on: ubuntu-24.04-arm
-    if: needs.prepare.outputs.publish == 'true'
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',agents,'))
     permissions:
       contents: read
       packages: write
@@ -127,7 +135,9 @@ jobs:
   controller:
     needs: prepare
     runs-on: large-16_64
-    if: needs.prepare.outputs.publish == 'true'
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',controller,'))
     permissions:
       contents: read
       packages: write
@@ -155,7 +165,9 @@ jobs:
   rest:
     needs: prepare
     runs-on: large-16_64
-    if: needs.prepare.outputs.publish == 'true'
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',rest,'))
     permissions:
       contents: read
       packages: write
@@ -183,7 +195,9 @@ jobs:
   boot-artifacts:
     needs: prepare
     runs-on: large-16_64
-    if: needs.prepare.outputs.publish == 'true'
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',boot-artifacts,'))
     permissions:
       contents: read
       packages: write
@@ -225,7 +239,9 @@ jobs:
   boot-artifacts-arm:
     needs: prepare
     runs-on: ubuntu-24.04-arm
-    if: needs.prepare.outputs.publish == 'true'
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',boot-artifacts-arm,'))
     permissions:
       contents: read
       packages: write
@@ -240,18 +256,59 @@ jobs:
       - name: Set up buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Stage checkout at /code so nested-docker mounts resolve on the host
-        run: |
-          sudo mkdir -p /code
-          sudo mount --bind "$GITHUB_WORKSPACE" /code
+      - name: Set up mkosi
+        uses: ./.github/actions/setup-mkosi-environment
+        with:
+          arch: aarch64
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Build and push arm boot-artifacts (aarch64, native)
-        working-directory: /code
+      - name: Install build dependencies (Kea, Boost, gRPC, protobuf, …)
         run: |
-          make images-bfb-arm \
+          sudo apt-get update
+          sudo apt-get install -y \
+            kea-dev kea-dhcp4-server kea-dhcp6-server \
+            libboost-dev libgrpc-dev libgrpc++-dev libprotobuf-dev \
+            protobuf-compiler protobuf-compiler-grpc \
+            libssl-dev libudev-dev libssh-dev libaio-dev libtss2-dev libopenipmi-dev \
+            build-essential clang cmake pkg-config lld
+
+      - name: Build and push arm boot-artifacts (aarch64 payload, amd64 container)
+        run: |
+          make images-bfb \
+            DPU_ARCHES=amd64 \
             IMAGE_REGISTRY="${REGISTRY}" \
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
+
+  charts:
+    needs: prepare
+    runs-on: ubuntu-latest
+    if: >-
+      needs.prepare.outputs.publish == 'true'
+      && (needs.prepare.outputs.only == '' || contains(format(',{0},', needs.prepare.outputs.only), ',charts,'))
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.upstream_ref }}
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Package and push DPU charts
+        run: |
+          CHART_VERSION="${VERSION#v}"
+          mkdir -p out
+          for c in nico-dpu-agent nico-dhcp-server nico-fmds nico-otelcol; do
+            helm dependency build "bluefield/charts/$c" || true
+            helm package "bluefield/charts/$c" --version "$CHART_VERSION" --app-version "$CHART_VERSION" -d out/
+          done
+          for tgz in out/*.tgz; do
+            helm push "$tgz" "oci://${REGISTRY}/charts"
+          done
