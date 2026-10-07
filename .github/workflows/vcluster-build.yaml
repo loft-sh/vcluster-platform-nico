@@ -274,10 +274,10 @@ jobs:
             libssl-dev libudev-dev libssh-dev libaio-dev libtss2-dev libopenipmi-dev \
             build-essential clang cmake pkg-config lld
 
-      - name: Build and push arm boot-artifacts (aarch64, cross)
+      - name: Build and push arm boot-artifacts (aarch64 payload, amd64 container)
         run: |
           make images-bfb \
-            DPU_ARCHES=arm64 \
+            DPU_ARCHES=amd64 \
             IMAGE_REGISTRY="${REGISTRY}" \
             IMAGE_TAG="${VERSION}" \
             VERSION="${VERSION}"
