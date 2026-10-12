@@ -88,7 +88,7 @@ release_mount() {
 }
 
 mounts_below() {
-	findmnt -lrn -o TARGET | awk -v prefix="$1/" 'index($0, prefix) == 1 { print gsub("/", "/"), $0 }' | sort -rn | cut -d' ' -f2-
+	findmnt -rn -o TARGET | awk -v prefix="$1/" 'index($0, prefix) == 1 { print gsub("/", "/"), $0 }' | sort -rn | cut -d' ' -f2-
 }
 
 unmount_below() {
@@ -100,7 +100,7 @@ unmount_below() {
 }
 
 top_mount_source() {
-	findmnt -lrn -o TARGET,SOURCE | awk -v target="$1" '$1 == target { source = $2 } END { print source }'
+	findmnt -rn -o TARGET,SOURCE | awk -v target="$1" '$1 == target { source = $2 } END { print source }'
 }
 
 safe_remove() {
@@ -115,7 +115,7 @@ safe_remove() {
 			return 1
 			;;
 	esac
-	if findmnt -lrn -o TARGET | awk -v path="$resolved" '$0 == path || index($0, path "/") == 1 { found = 1 } END { exit !found }'; then
+	if findmnt -rn -o TARGET | awk -v path="$resolved" '$0 == path || index($0, path "/") == 1 { found = 1 } END { exit !found }'; then
 		log "refusing to remove $resolved: something is still mounted at or below it"
 		return 1
 	fi

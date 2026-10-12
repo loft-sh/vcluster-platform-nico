@@ -168,6 +168,10 @@ log "boot decision: $BOOT_DECISION grub_rc(inferred)=$GRUB_RC boot order lines: 
 attach_block_device "$TARGET_RAW" raw ro "$DISK_BACKEND"
 TARGET_DEV=$ATTACHED_DEVICE
 inspect_imaged_root "$TARGET_DEV" "$ROOT_UUID"
+if [ "$SEED_WRITTEN" = true ] && [ "$GRUB_RC" != 0 ]; then
+	GRUB_RC=0
+	add_note "grub_rc set to 0: the seed was written and these imagers stop before the seed when grub fails"
+fi
 detach_block_device "$TARGET_DEV"
 
 BOOTED=skipped
