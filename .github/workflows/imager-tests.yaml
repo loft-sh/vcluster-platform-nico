@@ -1,0 +1,340 @@
+name: imager-tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      boot_artifacts_tag:
+        description: boot-artifacts-x86_64 tag whose qcow-imager.efi Level 2 boots (empty = default_boot_artifacts_tag in images.json)
+        required: false
+        default: ''
+      images:
+        description: Comma-separated image names from pxe/tests/imager/images.json, all, or none
+        required: false
+        default: all
+      level:
+        description: level1 (disk_imaging.sh on the runner kernel), level2 (UKI in QEMU) or both
+        required: false
+        default: both
+        type: choice
+        options:
+          - level1
+          - level2
+          - both
+      script_variants:
+        description: Comma-separated disk_imaging.sh variants for level1 (patched = this checkout, anything else = a tag in this repo)
+        required: false
+        default: patched,v2.2.0,v2.1.0-rc.8
+      image_url:
+        description: Optional ad hoc cloud image URL; adds one gated level1 patched leg and one level2 leg for it
+        required: false
+        default: ''
+      image_sha:
+        description: Optional digest of image_url as algo:hex (sha1, sha256, sha384 or sha512)
+        required: false
+        default: ''
+      image_name:
+        description: Name of the ad hoc image in results and artifact names
+        required: false
+        default: adhoc
+  pull_request:
+    paths:
+      - pxe/common_files/**
+      - pxe/tests/imager/**
+      - .github/workflows/imager-tests.yaml
+  push:
+    paths:
+      - pxe/common_files/**
+      - pxe/tests/imager/**
+      - .github/workflows/imager-tests.yaml
+
+env:
+  REGISTRY: ghcr.io/loft-sh/vcluster-platform-nico
+  CATALOG: pxe/tests/imager/images.json
+  TOOLING: qemu-utils qemu-system-x86 ovmf gdisk parted e2fsprogs xfsprogs lvm2 cloud-guest-utils jq python3 mtools kmod
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      level1_matrix: ${{ steps.derive.outputs.level1_matrix }}
+      level2_matrix: ${{ steps.derive.outputs.level2_matrix }}
+      run_level1: ${{ steps.derive.outputs.run_level1 }}
+      run_level2: ${{ steps.derive.outputs.run_level2 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: derive
+        env:
+          INPUT_IMAGES: ${{ inputs.images }}
+          INPUT_LEVEL: ${{ inputs.level }}
+          INPUT_VARIANTS: ${{ inputs.script_variants }}
+          INPUT_TAG: ${{ inputs.boot_artifacts_tag }}
+          INPUT_IMAGE_URL: ${{ inputs.image_url }}
+          INPUT_IMAGE_SHA: ${{ inputs.image_sha }}
+          INPUT_IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          python3 -I pxe/tests/imager/check_result.py matrix \
+            --images-json "$CATALOG" \
+            --images "${INPUT_IMAGES:-all}" \
+            --level "${INPUT_LEVEL:-both}" \
+            --variants "$INPUT_VARIANTS" \
+            --tag "$INPUT_TAG" \
+            --adhoc-url "$INPUT_IMAGE_URL" \
+            --adhoc-sha "$INPUT_IMAGE_SHA" \
+            --adhoc-name "${INPUT_IMAGE_NAME:-adhoc}" | tee -a "$GITHUB_OUTPUT"
+
+  level1:
+    name: level1 ${{ matrix.image }} ${{ matrix.variant }}
+    needs: prepare
+    if: needs.prepare.outputs.run_level1 == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.level1_matrix) }}
+    continue-on-error: ${{ !matrix.gate }}
+    env:
+      IMAGE: ${{ matrix.image }}
+      VARIANT: ${{ matrix.variant }}
+      ADHOC_URL: ${{ matrix.url }}
+      ADHOC_SHA: ${{ matrix.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set paths
+        run: |
+          {
+            echo "IMAGE_DIR=${{ runner.temp }}/imager-images/$IMAGE"
+            echo "OUT_DIR=${{ runner.temp }}/imager-out"
+            echo "WORK_DIR=${{ runner.temp }}/imager-work"
+          } >> "$GITHUB_ENV"
+
+      - name: Install imaging and QEMU tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $TOOLING
+
+      - name: Load nbd
+        run: |
+          if sudo modprobe nbd max_part=16 || { sudo apt-get install -y "linux-modules-extra-$(uname -r)" && sudo modprobe nbd max_part=16; }; then
+            echo "nbd max_part=$(cat /sys/module/nbd/parameters/max_part)"
+          else
+            echo "::warning::nbd is unavailable on $(uname -r); the driver falls back to loop, which is infra-limited"
+          fi
+
+      - name: Fetch catalog checksum file
+        id: checksum
+        if: matrix.url == ''
+        run: bash pxe/tests/imager/fetch_image.sh checksum --image "$IMAGE" --dest "$IMAGE_DIR"
+
+      - name: Restore cached cloud image
+        if: matrix.url == ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.IMAGE_DIR }}/image
+          key: imager-image-${{ matrix.image }}-${{ steps.checksum.outputs.checksum_hash }}
+
+      - name: Download and verify catalog image
+        id: catalog_image
+        if: matrix.url == ''
+        run: bash pxe/tests/imager/fetch_image.sh image --image "$IMAGE" --dest "$IMAGE_DIR"
+
+      - name: Download and verify ad hoc image
+        id: adhoc_image
+        if: matrix.url != ''
+        run: bash pxe/tests/imager/fetch_image.sh adhoc --image "$IMAGE" --url "$ADHOC_URL" --sha "$ADHOC_SHA" --dest "$IMAGE_DIR"
+
+      - name: Materialise disk_imaging.sh variant
+        run: |
+          mkdir -p "$OUT_DIR"
+          if [ "$VARIANT" = patched ]; then
+            cp pxe/common_files/disk_imaging.sh "$OUT_DIR/disk_imaging.sh"
+          else
+            git rev-parse -q --verify "refs/tags/${VARIANT}^{commit}" >/dev/null || { echo "::error::tag $VARIANT is not in this repository"; exit 1; }
+            git show "refs/tags/${VARIANT}:pxe/common_files/disk_imaging.sh" > "$OUT_DIR/disk_imaging.sh"
+          fi
+          bash -n "$OUT_DIR/disk_imaging.sh"
+          sha256sum "$OUT_DIR/disk_imaging.sh"
+
+      - name: Run disk_imaging.sh against an nvme-named target disk
+        env:
+          IMAGE_PATH: ${{ steps.catalog_image.outputs.image_path || steps.adhoc_image.outputs.image_path }}
+        run: |
+          sudo unshare -m --propagation private bash pxe/tests/imager/loopback_test.sh \
+            --script "$OUT_DIR/disk_imaging.sh" \
+            --variant "$VARIANT" \
+            --image "$IMAGE" \
+            --image-file "$IMAGE_PATH" \
+            --work-dir "$WORK_DIR" \
+            --result "$OUT_DIR/result.json" \
+            --log-dir "$OUT_DIR" \
+            --boot-test 1
+
+      - name: Check result against images.json
+        if: always()
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$OUT_DIR" 2>/dev/null || true
+          python3 -I pxe/tests/imager/check_result.py check \
+            --images-json "$CATALOG" \
+            --result "$OUT_DIR/result.json" \
+            --image "$IMAGE" \
+            --variant "$VARIANT" \
+            --level level1 \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imager-level1-${{ matrix.image }}-${{ matrix.variant }}
+          path: ${{ runner.temp }}/imager-out
+          if-no-files-found: warn
+
+  level2:
+    name: level2 ${{ matrix.image }} ${{ matrix.variant }}
+    needs: prepare
+    if: needs.prepare.outputs.run_level2 == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.level2_matrix) }}
+    continue-on-error: ${{ !matrix.gate }}
+    env:
+      IMAGE: ${{ matrix.image }}
+      VARIANT: ${{ matrix.variant }}
+      BOOT_ARTIFACTS_TAG: ${{ matrix.tag }}
+      ADHOC_URL: ${{ matrix.url }}
+      ADHOC_SHA: ${{ matrix.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set paths
+        run: |
+          {
+            echo "IMAGE_DIR=${{ runner.temp }}/imager-images/$IMAGE"
+            echo "OUT_DIR=${{ runner.temp }}/imager-out"
+            echo "WORK_DIR=${{ runner.temp }}/imager-work"
+            echo "UKI_PATH=${{ runner.temp }}/qcow-imager.efi"
+          } >> "$GITHUB_ENV"
+
+      - name: Install imaging and QEMU tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $TOOLING
+
+      - name: Load nbd
+        run: |
+          if sudo modprobe nbd max_part=16 || { sudo apt-get install -y "linux-modules-extra-$(uname -r)" && sudo modprobe nbd max_part=16; }; then
+            echo "nbd max_part=$(cat /sys/module/nbd/parameters/max_part)"
+          else
+            echo "::warning::nbd is unavailable on $(uname -r); probing and inspection fall back to loop"
+          fi
+
+      - name: Fetch catalog checksum file
+        id: checksum
+        if: matrix.url == ''
+        run: bash pxe/tests/imager/fetch_image.sh checksum --image "$IMAGE" --dest "$IMAGE_DIR"
+
+      - name: Restore cached cloud image
+        if: matrix.url == ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.IMAGE_DIR }}/image
+          key: imager-image-${{ matrix.image }}-${{ steps.checksum.outputs.checksum_hash }}
+
+      - name: Download and verify catalog image
+        id: catalog_image
+        if: matrix.url == ''
+        run: bash pxe/tests/imager/fetch_image.sh image --image "$IMAGE" --dest "$IMAGE_DIR"
+
+      - name: Download and verify ad hoc image
+        id: adhoc_image
+        if: matrix.url != ''
+        run: bash pxe/tests/imager/fetch_image.sh adhoc --image "$IMAGE" --url "$ADHOC_URL" --sha "$ADHOC_SHA" --dest "$IMAGE_DIR"
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Extract qcow-imager.efi from boot-artifacts
+        run: |
+          docker pull "${REGISTRY}/boot-artifacts-x86_64:${BOOT_ARTIFACTS_TAG}"
+          CONTAINER=$(docker create "${REGISTRY}/boot-artifacts-x86_64:${BOOT_ARTIFACTS_TAG}")
+          docker cp "${CONTAINER}:/x86_64/qcow-imager.efi" "$UKI_PATH"
+          docker rm "$CONTAINER"
+          sha256sum "$UKI_PATH"
+
+      - name: Run the UKI imager in QEMU, then boot its disk with its NVRAM
+        env:
+          IMAGE_PATH: ${{ steps.catalog_image.outputs.image_path || steps.adhoc_image.outputs.image_path }}
+        run: |
+          mkdir -p "$OUT_DIR"
+          sudo unshare -m --propagation private bash pxe/tests/imager/uki_test.sh \
+            --uki "$UKI_PATH" \
+            --variant "$VARIANT" \
+            --image "$IMAGE" \
+            --image-file "$IMAGE_PATH" \
+            --work-dir "$WORK_DIR" \
+            --result "$OUT_DIR/result.json" \
+            --log-dir "$OUT_DIR" \
+            --boot-test 1
+
+      - name: Check result against images.json
+        if: always()
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "$OUT_DIR" 2>/dev/null || true
+          python3 -I pxe/tests/imager/check_result.py check \
+            --images-json "$CATALOG" \
+            --result "$OUT_DIR/result.json" \
+            --image "$IMAGE" \
+            --variant "$VARIANT" \
+            --level level2 \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imager-level2-${{ matrix.image }}-${{ matrix.tag }}
+          path: ${{ runner.temp }}/imager-out
+          if-no-files-found: warn
+
+  imager-tests-pass:
+    needs:
+      - prepare
+      - level1
+      - level2
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every gated leg to have passed
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          LEVEL1_RESULT: ${{ needs.level1.result }}
+          LEVEL2_RESULT: ${{ needs.level2.result }}
+          RUN_LEVEL1: ${{ needs.prepare.outputs.run_level1 }}
+          RUN_LEVEL2: ${{ needs.prepare.outputs.run_level2 }}
+        run: |
+          echo "prepare=$PREPARE_RESULT level1=$LEVEL1_RESULT (run=$RUN_LEVEL1) level2=$LEVEL2_RESULT (run=$RUN_LEVEL2)"
+          FAILED=0
+          [ "$PREPARE_RESULT" = success ] || FAILED=1
+          if [ "$RUN_LEVEL1" = true ] && [ "$LEVEL1_RESULT" != success ]; then FAILED=1; fi
+          if [ "$RUN_LEVEL2" = true ] && [ "$LEVEL2_RESULT" != success ]; then FAILED=1; fi
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::a gated imager test leg did not succeed"
+            exit 1
+          fi
+          echo "all gated imager test legs passed"

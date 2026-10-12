@@ -1,0 +1,65 @@
+{
+  "default_boot_artifacts_tag": "v2.2.0-vcluster.3.g20eef036",
+  "script_variants": ["patched", "v2.2.0", "v2.1.0-rc.8"],
+  "adhoc_expected": {"gate": true, "seed_written": true, "booted": true},
+  "images": [
+    {
+      "name": "ubuntu-24.04",
+      "url": "https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img",
+      "checksum_url": "https://cloud-images.ubuntu.com/releases/noble/release/SHA256SUMS",
+      "checksum_format": "coreutils",
+      "checksum_name_pattern": "^ubuntu-24\\.04-server-cloudimg-amd64\\.img$",
+      "expected": {
+        "patched": {"gate": true, "boot_decision": "fstab", "grub_rc": 0, "seed_written": true, "booted": true, "efi_loader": "\\EFI\\ubuntu\\shimx64.efi", "efi_network_first": true},
+        "uki": {"gate": true, "boot_decision": "fstab", "seed_written": true, "booted": true},
+        "v2.2.0": {"gate": true, "grub_rc": "nonzero", "seed_written": false},
+        "uki:v2.2.0-vcluster.1.g7598a1d4": {"gate": true, "grub_rc": "nonzero", "seed_written": false},
+        "v2.1.0-rc.8": {"seed_written": true}
+      }
+    },
+    {
+      "name": "ubuntu-22.04",
+      "url": "https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img",
+      "checksum_url": "https://cloud-images.ubuntu.com/releases/jammy/release/SHA256SUMS",
+      "checksum_format": "coreutils",
+      "checksum_name_pattern": "^ubuntu-22\\.04-server-cloudimg-amd64\\.img$",
+      "expected": {
+        "patched": {"gate": true, "boot_decision": "grub-in-root", "grub_rc": 0, "seed_written": true, "booted": true, "efi_loader": "\\EFI\\ubuntu\\shimx64.efi", "efi_network_first": true},
+        "uki": {"gate": true, "boot_decision": "grub-in-root", "seed_written": true, "booted": true}
+      }
+    },
+    {
+      "name": "debian-12",
+      "url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2",
+      "checksum_url": "https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS",
+      "checksum_format": "coreutils",
+      "checksum_name_pattern": "^debian-12-genericcloud-amd64.*\\.qcow2$",
+      "expected": {
+        "patched": {"gate": true, "boot_decision": "grub-in-root", "grub_rc": 0, "seed_written": true, "booted": true, "efi_loader": "\\EFI\\debian\\shimx64.efi", "efi_network_first": true},
+        "uki": {"gate": true, "boot_decision": "grub-in-root", "seed_written": true, "booted": true}
+      }
+    },
+    {
+      "name": "centos-stream-9",
+      "url": "https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2",
+      "checksum_url": "https://cloud.centos.org/centos/9-stream/x86_64/images/CHECKSUM",
+      "checksum_format": "bsd",
+      "checksum_name_pattern": "^CentOS-Stream-GenericCloud-9-.*\\.x86_64\\.qcow2$",
+      "expected": {
+        "patched": {"gate": true, "boot_decision": "fstab", "grub_rc": 0, "seed_written": true, "booted": true, "efi_loader": "\\EFI\\centos\\shimx64.efi", "efi_network_first": true},
+        "uki": {"gate": true, "boot_decision": "fstab", "seed_written": true, "booted": true}
+      }
+    },
+    {
+      "name": "rocky-9",
+      "url": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
+      "checksum_url": "https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM",
+      "checksum_format": "bsd",
+      "checksum_name_pattern": "^Rocky-9-GenericCloud-Base.*\\.x86_64\\.qcow2$",
+      "expected": {
+        "patched": {"gate": true, "boot_decision": "fstab", "grub_rc": 0, "seed_written": true, "booted": true, "efi_loader": "\\EFI\\rocky\\shimx64.efi", "efi_network_first": true},
+        "uki": {"gate": true, "boot_decision": "fstab", "seed_written": true, "booted": true}
+      }
+    }
+  ]
+}
