@@ -36,7 +36,7 @@ runs:
     # most -- the one the mirror just failed.
     - name: Restore apt archives
       id: apt-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/nico-apt-archives
         key: apt-mkosi-${{ runner.arch }}-${{ hashFiles('.github/actions/setup-mkosi-environment/action.yml') }}-${{ steps.apt-key.outputs.week }}
@@ -189,7 +189,7 @@ runs:
 
     - name: Save apt archives
       if: ${{ !cancelled() && steps.apt-cache.outputs.cache-hit != 'true' }}
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/nico-apt-archives
         key: ${{ steps.apt-cache.outputs.cache-primary-key }}
@@ -220,7 +220,7 @@ runs:
     # once -- caching the resulting binary is what keeps that off the critical
     # path on subsequent runs.
     - name: Restore cargo-make
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cargo/bin/cargo-make
         key: cargo-make-${{ inputs.cargo-make-version }}-${{ runner.os }}-${{ runner.arch }}
