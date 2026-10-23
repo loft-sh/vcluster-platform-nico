@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Build stage
-FROM --platform=$BUILDPLATFORM golang:1.26.4 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.10 AS builder
 
 # Docker automatically provides these args during multi-platform builds
 ARG TARGETOS=linux
@@ -42,6 +42,7 @@ RUN go build -ldflags "-extldflags '-static'" \
 FROM alpine:3.24 AS final
 
 RUN apk add --no-cache \
+    ca-certificates \
     libc6-compat \
     bash \
     curl \
