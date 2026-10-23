@@ -3174,6 +3174,7 @@ func TestCreateExpectedMachineHandler_DpfEnabledForwardedToWorkflow(t *testing.T
 			"fixedIp":    "192.0.2.9",
 		}},
 	}
+	rawBody["bmcRetainCredentials"] = true
 	reqBody, err := json.Marshal(rawBody)
 	assert.Nil(t, err)
 
@@ -3207,6 +3208,9 @@ func TestCreateExpectedMachineHandler_DpfEnabledForwardedToWorkflow(t *testing.T
 			assert.False(t, *capturedRequest.IsDpfEnabled)
 		}
 		assert.False(t, capturedRequest.DpfEnabled)
+		if assert.NotNil(t, capturedRequest.BmcRetainCredentials) {
+			assert.True(t, *capturedRequest.BmcRetainCredentials)
+		}
 		require.Len(t, capturedRequest.HostNics, 1)
 		assert.Equal(t, "02:AA:BB:CC:DD:EE", capturedRequest.HostNics[0].GetMacAddress())
 		assert.Equal(t, "CX9", capturedRequest.HostNics[0].GetNicType())
@@ -3217,6 +3221,7 @@ func TestCreateExpectedMachineHandler_DpfEnabledForwardedToWorkflow(t *testing.T
 	err = json.Unmarshal(rec.Body.Bytes(), &apiResponse)
 	assert.Nil(t, err)
 	assert.False(t, apiResponse.IsDpfEnabled)
+	assert.True(t, apiResponse.BmcRetainCredentials)
 	require.Len(t, apiResponse.Interfaces, 1)
 	assert.Equal(t, cutil.GetPtr("02:AA:BB:CC:DD:EE"), apiResponse.Interfaces[0].MacAddress)
 	stored, err := cdbm.NewExpectedMachineDAO(dbSession).Get(context.Background(), nil, apiResponse.ID, nil, false)

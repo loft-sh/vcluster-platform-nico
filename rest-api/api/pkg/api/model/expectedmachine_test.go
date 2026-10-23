@@ -613,8 +613,10 @@ func TestNewAPIExpectedMachine(t *testing.T) {
 	tests := []struct {
 		desc                 string
 		isDpfEnabled         *bool
+		bmcRetainCredentials *bool
 		hostLifecycleProfile cdbm.HostLifecycleProfile
 		wantDpfJSON          string
+		wantRetainJSON       string
 		wantProfile          *APIHostLifecycleProfile
 		labels               cdbm.Labels
 		dpuSerials           []string
@@ -626,6 +628,7 @@ func TestNewAPIExpectedMachine(t *testing.T) {
 		{
 			desc:               "nil collections serialize as empty and unset DPF defaults to true",
 			wantDpfJSON:        "true",
+			wantRetainJSON:     "false",
 			wantLabelsJSON:     `{}`,
 			wantSerialsJSON:    `[]`,
 			wantInterfacesJSON: `[]`,
@@ -670,6 +673,11 @@ func TestNewAPIExpectedMachine(t *testing.T) {
 			wantDpfJSON:  "true",
 		},
 		{
+			desc:                 "stored BMC retain credentials true is returned",
+			bmcRetainCredentials: cutil.GetPtr(true),
+			wantRetainJSON:       "true",
+		},
+		{
 			desc:                 "disableLockdown true round-trips",
 			hostLifecycleProfile: cdbm.HostLifecycleProfile{DisableLockdown: cutil.GetPtr(true)},
 			wantProfile:          &APIHostLifecycleProfile{DisableLockdown: cutil.GetPtr(true)},
@@ -689,6 +697,7 @@ func TestNewAPIExpectedMachine(t *testing.T) {
 				FallbackDpuSerialNumbers: tc.dpuSerials,
 				Labels:                   tc.labels,
 				IsDpfEnabled:             tc.isDpfEnabled,
+				BmcRetainCredentials:     tc.bmcRetainCredentials,
 				HostLifecycleProfile:     tc.hostLifecycleProfile,
 				Interfaces:               tc.interfaces,
 				Created:                  cdb.GetCurTime(),
@@ -715,6 +724,9 @@ func TestNewAPIExpectedMachine(t *testing.T) {
 			}
 			if tc.wantDpfJSON != "" {
 				assert.Equal(t, tc.wantDpfJSON, string(fields["isDpfEnabled"]))
+			}
+			if tc.wantRetainJSON != "" {
+				assert.Equal(t, tc.wantRetainJSON, string(fields["bmcRetainCredentials"]))
 			}
 			if tc.wantInterfacesJSON != "" {
 				assert.JSONEq(t, tc.wantInterfacesJSON, string(fields["interfaces"]))
@@ -1691,6 +1703,9 @@ func TestAPIExpectedMachineUpdateRequest_ToProto(t *testing.T) {
 		{name: "server name selects server_name path", body: `{"serverName":"server-1"}`, wantPaths: []string{"server_name"}},
 		{name: "empty server name clears Core state", body: `{"serverName":""}`, wantPaths: []string{"server_name"}},
 		{name: "null server name preserves Core state", body: `{"serverName":null}`},
+		{name: "BMC retain credentials selects its path", body: `{"bmcRetainCredentials":true}`, wantPaths: []string{"bmc_retain_credentials"}},
+		{name: "BMC retain credentials false remains selected", body: `{"bmcRetainCredentials":false}`, wantPaths: []string{"bmc_retain_credentials"}},
+		{name: "null BMC retain credentials preserves Core state", body: `{"bmcRetainCredentials":null}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

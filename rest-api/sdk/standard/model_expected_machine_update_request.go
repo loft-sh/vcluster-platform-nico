@@ -59,8 +59,10 @@ type ExpectedMachineUpdateRequest struct {
 	TrayIdx NullableInt32 `json:"trayIdx,omitempty"`
 	// Host ID within the tray
 	HostId NullableInt32 `json:"hostId,omitempty"`
-	// When true, this host is eligible for DPF-based provisioning. Optional. Omission or null leaves the existing setting unchanged. An explicit true or false value updates the setting.
+	// When true, this host is eligible for DPF-based provisioning. Optional. Omission or null leaves the existing setting unchanged.
 	IsDpfEnabled NullableBool `json:"isDpfEnabled,omitempty"`
+	// When true, NICo keeps the provided BMC credentials instead of rotating them to the site-wide BMC password. Optional. Omission or null leaves the existing setting unchanged. An explicit true or false value updates the setting.
+	BmcRetainCredentials NullableBool `json:"bmcRetainCredentials,omitempty"`
 	// User-defined key-value pairs for organizing and categorizing Expected Machines
 	Labels map[string]string `json:"labels,omitempty"`
 	// Optional per-host lifecycle profile
@@ -882,6 +884,49 @@ func (o *ExpectedMachineUpdateRequest) UnsetIsDpfEnabled() {
 	o.IsDpfEnabled.Unset()
 }
 
+// GetBmcRetainCredentials returns the BmcRetainCredentials field value if set, zero value otherwise (both if not set or set to explicit null).
+func (o *ExpectedMachineUpdateRequest) GetBmcRetainCredentials() bool {
+	if o == nil || IsNil(o.BmcRetainCredentials.Get()) {
+		var ret bool
+		return ret
+	}
+	return *o.BmcRetainCredentials.Get()
+}
+
+// GetBmcRetainCredentialsOk returns a tuple with the BmcRetainCredentials field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *ExpectedMachineUpdateRequest) GetBmcRetainCredentialsOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.BmcRetainCredentials.Get(), o.BmcRetainCredentials.IsSet()
+}
+
+// HasBmcRetainCredentials returns a boolean if a field has been set.
+func (o *ExpectedMachineUpdateRequest) HasBmcRetainCredentials() bool {
+	if o != nil && o.BmcRetainCredentials.IsSet() {
+		return true
+	}
+
+	return false
+}
+
+// SetBmcRetainCredentials gets a reference to the given NullableBool and assigns it to the BmcRetainCredentials field.
+func (o *ExpectedMachineUpdateRequest) SetBmcRetainCredentials(v bool) {
+	o.BmcRetainCredentials.Set(&v)
+}
+
+// SetBmcRetainCredentialsNil sets the value for BmcRetainCredentials to be an explicit nil
+func (o *ExpectedMachineUpdateRequest) SetBmcRetainCredentialsNil() {
+	o.BmcRetainCredentials.Set(nil)
+}
+
+// UnsetBmcRetainCredentials ensures that no value is present for BmcRetainCredentials, not even an explicit nil
+func (o *ExpectedMachineUpdateRequest) UnsetBmcRetainCredentials() {
+	o.BmcRetainCredentials.Unset()
+}
+
 // GetLabels returns the Labels field value if set, zero value otherwise.
 func (o *ExpectedMachineUpdateRequest) GetLabels() map[string]string {
 	if o == nil || IsNil(o.Labels) {
@@ -1012,6 +1057,9 @@ func (o ExpectedMachineUpdateRequest) ToMap() (map[string]interface{}, error) {
 	}
 	if o.IsDpfEnabled.IsSet() {
 		toSerialize["isDpfEnabled"] = o.IsDpfEnabled.Get()
+	}
+	if o.BmcRetainCredentials.IsSet() {
+		toSerialize["bmcRetainCredentials"] = o.BmcRetainCredentials.Get()
 	}
 	if !IsNil(o.Labels) {
 		toSerialize["labels"] = o.Labels

@@ -247,6 +247,29 @@ func TestExpectedMachine_ToProto(t *testing.T) {
 		assert.False(t, proto.DpfEnabled)
 	})
 
+	t.Run("sets bmc_retain_credentials when stored", func(t *testing.T) {
+		em := &ExpectedMachine{
+			ID:                   id,
+			BmcMacAddress:        "aa:bb:cc:dd:ee:ff",
+			ChassisSerialNumber:  "CSN-1",
+			BmcRetainCredentials: &enabled,
+		}
+		proto := em.ToProto(ExpectedMachineCredentials{})
+		if assert.NotNil(t, proto.BmcRetainCredentials) {
+			assert.True(t, *proto.BmcRetainCredentials)
+		}
+	})
+
+	t.Run("omits bmc_retain_credentials when unset", func(t *testing.T) {
+		em := &ExpectedMachine{
+			ID:                  id,
+			BmcMacAddress:       "aa:bb:cc:dd:ee:ff",
+			ChassisSerialNumber: "CSN-1",
+		}
+		proto := em.ToProto(ExpectedMachineCredentials{})
+		assert.Nil(t, proto.BmcRetainCredentials)
+	})
+
 	t.Run("forwards interfaces in order", func(t *testing.T) {
 		nicType := "CX9"
 		fixedIP := "192.0.2.9"
