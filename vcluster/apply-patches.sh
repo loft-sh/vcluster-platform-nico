@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
-  echo "usage: vcluster/rebuild.sh <nvidia-tag>   e.g. vcluster/rebuild.sh v2.4.0-rc.1" >&2
+  echo "usage: vcluster/apply-patches.sh <nvidia-tag>   e.g. vcluster/apply-patches.sh v2.4.0-rc.1" >&2
   exit 2
 fi
 

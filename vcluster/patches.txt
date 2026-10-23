@@ -1,4 +1,4 @@
-# Patches applied, in order, on top of an NVIDIA release tag by vcluster/rebuild.sh.
+# Patches applied, in order, on top of an NVIDIA release tag by vcluster/apply-patches.sh.
 # One fork branch per line; its tip commit is the patch. Drop a line once NVIDIA ships the fix.
 # <fork branch> <upstream PR or "none">
 patch/v2.4/emudhra-ca-rebuild none
