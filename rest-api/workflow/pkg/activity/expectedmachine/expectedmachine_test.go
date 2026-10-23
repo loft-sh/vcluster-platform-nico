@@ -1037,6 +1037,10 @@ func TestManageExpectedMachine_UpdateExpectedMachinesInDB(t *testing.T) {
 				reported.IsDpfEnabled = cutil.GetPtr(false)
 				want.IsDpfEnabled = cutil.GetPtr(false)
 			}},
+			{"BMC retain credentials", func(reported *corev1.ExpectedMachine, want *cdbm.ExpectedMachine) {
+				reported.BmcRetainCredentials = cutil.GetPtr(true)
+				want.BmcRetainCredentials = cutil.GetPtr(true)
+			}},
 		} {
 			next := cases[len(cases)-1]
 			next.name = "replace only " + field.name

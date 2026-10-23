@@ -201,6 +201,7 @@ func (mei ManageExpectedMachine) UpdateExpectedMachinesInDB(ctx context.Context,
 				MachineID:                reported.MachineID,
 				FallbackDpuSerialNumbers: reported.FallbackDpuSerialNumbers,
 				IsDpfEnabled:             reported.IsDpfEnabled,
+				BmcRetainCredentials:     reported.BmcRetainCredentials,
 				HostLifecycleProfile:     reported.HostLifecycleProfile,
 				Labels:                   reported.Labels,
 				CreatedBy:                siteID, /* This would normally be a user ID, but that isn't something NICo provides */
@@ -239,6 +240,7 @@ func (mei ManageExpectedMachine) UpdateExpectedMachinesInDB(ctx context.Context,
 			(reported.MachineID != nil && !util.PtrsEqual(cur.MachineID, reported.MachineID)) ||
 			(reported.FallbackDpuSerialNumbers != nil && !slices.Equal(cur.FallbackDpuSerialNumbers, reported.FallbackDpuSerialNumbers)) ||
 			(reported.IsDpfEnabled != nil && !util.PtrsEqual(cur.IsDpfEnabled, reported.IsDpfEnabled)) ||
+			(reported.BmcRetainCredentials != nil && !util.PtrsEqual(cur.BmcRetainCredentials, reported.BmcRetainCredentials)) ||
 			(reported.HostLifecycleProfile.DisableLockdown != nil && !util.PtrsEqual(cur.HostLifecycleProfile.DisableLockdown, reported.HostLifecycleProfile.DisableLockdown)) ||
 			!maps.Equal(cur.Labels, reported.Labels) {
 			uerr := cdb.WithTx(ctx, mei.dbSession, func(tx *cdb.Tx) error {
@@ -281,6 +283,7 @@ func (mei ManageExpectedMachine) UpdateExpectedMachinesInDB(ctx context.Context,
 					FallbackDpuSerialNumbers: reported.FallbackDpuSerialNumbers,
 					Interfaces:               reported.Interfaces,
 					IsDpfEnabled:             reported.IsDpfEnabled,
+					BmcRetainCredentials:     reported.BmcRetainCredentials,
 					HostLifecycleProfile:     hostLifecycleProfile,
 					Labels:                   reported.Labels,
 				})
