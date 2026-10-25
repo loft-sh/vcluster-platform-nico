@@ -6160,6 +6160,7 @@ path = "credentials.yaml"
             polling_bios_setup_stuck_threshold: Duration::minutes(15),
             boot_interface_observation_interval: Duration::hours(2),
             full_lockdown_recovery_enabled: true,
+            bios_profile_persistent_drift_prevents_allocation: false,
         };
 
         let config_str = serde_json::to_string(&input).unwrap();
@@ -6209,6 +6210,7 @@ path = "credentials.yaml"
                 polling_bios_setup_stuck_threshold: Duration::minutes(15),
                 boot_interface_observation_interval: Duration::hours(2),
                 full_lockdown_recovery_enabled: false,
+                bios_profile_persistent_drift_prevents_allocation: false,
             }
         );
     }
@@ -6234,6 +6236,7 @@ path = "credentials.yaml"
                 polling_bios_setup_stuck_threshold: Duration::minutes(15),
                 boot_interface_observation_interval: Duration::minutes(10),
                 full_lockdown_recovery_enabled: false,
+                bios_profile_persistent_drift_prevents_allocation: false,
             }
         );
     }

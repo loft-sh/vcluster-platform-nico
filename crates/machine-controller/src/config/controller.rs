@@ -106,6 +106,8 @@ pub struct MachineStateControllerConfig {
     /// for the additional state-drain requirements before an older-code rollback.
     #[serde(default)]
     pub full_lockdown_recovery_enabled: bool,
+    #[serde(default)]
+    pub bios_profile_persistent_drift_prevents_allocation: bool,
     /// How long PollingBiosSetup may sit on Ok(false) before escalating into
     /// HandleBiosJobFailure recovery.
     #[serde(
@@ -139,6 +141,7 @@ impl MachineStateControllerConfig {
             max_bios_config_retries: MachineStateControllerConfig::max_bios_config_retries_default(
             ),
             full_lockdown_recovery_enabled: false,
+            bios_profile_persistent_drift_prevents_allocation: false,
             polling_bios_setup_stuck_threshold:
                 MachineStateControllerConfig::polling_bios_setup_stuck_threshold_default(),
             // Keep periodic Redfish reads out of unrelated controller tests.
@@ -205,6 +208,7 @@ impl Default for MachineStateControllerConfig {
             max_bios_config_retries: MachineStateControllerConfig::max_bios_config_retries_default(
             ),
             full_lockdown_recovery_enabled: false,
+            bios_profile_persistent_drift_prevents_allocation: false,
             polling_bios_setup_stuck_threshold:
                 MachineStateControllerConfig::polling_bios_setup_stuck_threshold_default(),
             boot_interface_observation_interval:
