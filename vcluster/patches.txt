@@ -6,3 +6,4 @@ patch/v2.4/bmc-retain-credentials pending
 patch/v2.4/named-bios-profiles none
 patch/v2.4/gpu-clock-deprecated-query pending
 patch/v2.4/bios-profile-drift none
+patch/v2.4/maintenance-reverify-boot-config none
