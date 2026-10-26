@@ -9,4 +9,5 @@ patch/v2.4/bios-profile-drift none
 patch/v2.4/maintenance-reverify-boot-config none
 patch/v2.4/bios-observation-api none
 patch/v2.4/bios-profile-api none
+patch/v2.4/bios-async-bmc-reads none
 patch/v2.4/bios-applied-bootprogress none
