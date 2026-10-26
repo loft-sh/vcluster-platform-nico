@@ -22,10 +22,12 @@ import (
 // checks if the MachineBiosProfile type satisfies the MappedNullable interface at compile time
 var _ MappedNullable = &MachineBiosProfile{}
 
-// MachineBiosProfile A named BIOS profile from the site configuration
+// MachineBiosProfile A named BIOS profile stored in NICo or, failing that, from the site configuration
 type MachineBiosProfile struct {
 	// Name of the profile, as given by the Machine's `bios-profile` label
 	Name string `json:"name"`
+	// Revision of the stored profile, or null for a profile from the site configuration
+	Revision NullableString `json:"revision"`
 	// BIOS attribute names and the values the profile sets
 	Attributes map[string]interface{} `json:"attributes"`
 }
@@ -36,9 +38,10 @@ type _MachineBiosProfile MachineBiosProfile
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewMachineBiosProfile(name string, attributes map[string]interface{}) *MachineBiosProfile {
+func NewMachineBiosProfile(name string, revision NullableString, attributes map[string]interface{}) *MachineBiosProfile {
 	this := MachineBiosProfile{}
 	this.Name = name
+	this.Revision = revision
 	this.Attributes = attributes
 	return &this
 }
@@ -73,6 +76,32 @@ func (o *MachineBiosProfile) GetNameOk() (*string, bool) {
 // SetName sets field value
 func (o *MachineBiosProfile) SetName(v string) {
 	o.Name = v
+}
+
+// GetRevision returns the Revision field value
+// If the value is explicit nil, the zero value for string will be returned
+func (o *MachineBiosProfile) GetRevision() string {
+	if o == nil || o.Revision.Get() == nil {
+		var ret string
+		return ret
+	}
+
+	return *o.Revision.Get()
+}
+
+// GetRevisionOk returns a tuple with the Revision field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *MachineBiosProfile) GetRevisionOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.Revision.Get(), o.Revision.IsSet()
+}
+
+// SetRevision sets field value
+func (o *MachineBiosProfile) SetRevision(v string) {
+	o.Revision.Set(&v)
 }
 
 // GetAttributes returns the Attributes field value
@@ -110,6 +139,7 @@ func (o MachineBiosProfile) MarshalJSON() ([]byte, error) {
 func (o MachineBiosProfile) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
 	toSerialize["name"] = o.Name
+	toSerialize["revision"] = o.Revision.Get()
 	toSerialize["attributes"] = o.Attributes
 	return toSerialize, nil
 }
@@ -120,6 +150,7 @@ func (o *MachineBiosProfile) UnmarshalJSON(data []byte) (err error) {
 	// that every required field exists as a key in the generic map.
 	requiredProperties := []string{
 		"name",
+		"revision",
 		"attributes",
 	}
 

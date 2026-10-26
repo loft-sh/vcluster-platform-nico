@@ -246,6 +246,9 @@ tags:
       Machine is a physical server that contains CPUs, GPUs, memory, storage, and networking hardware. Machines are the physical building blocks of a Site.
 
       Machine-scoped operations manage attached DPUs, health reports, validation runs and results, BMC and chassis resets, power, decommissioning, and status history.
+  - name: BIOS Profile
+    description: |-
+      BIOS Profiles are named sets of BIOS attribute values stored in NICo for a Site. A Machine whose `bios-profile` label names a profile, and whose vendor and model match it, gets those BIOS attributes whenever NICo configures the Machine's BIOS. A stored profile takes precedence over a profile of the same name in the site configuration.
   - name: DPU Machine
     description: |-
       A DPU (Data Processing Unit) is a programmable network device installed in a Machine that runs its own operating system, so NICo tracks each DPU as a Machine of its own alongside the host Machine it is attached to. NICo provisions the DPU and uses it to enforce network isolation and Machine trust for the host, including when that host moves between Tenants.
@@ -12170,6 +12173,7 @@ paths:
                     machineId: fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
                     profile:
                       name: lenovo-h200
+                      revision: 3f2a9c1d7b4e
                       attributes:
                         OperatingModes_ChooseOperatingMode: MaximumPerformance
                     observation:
@@ -12178,6 +12182,7 @@ paths:
                       biosVersion: R3X318M
                       attributeRegistry: BiosAttributeRegistry.1.0.0
                       settingsAppliedAt: null
+                      appliedRevision: 3f2a9c1d7b4e
                       current:
                         OperatingModes_ChooseOperatingMode: CustomMode
                         SystemRecovery_POSTWatchdogTimerValue: 5
@@ -12233,6 +12238,7 @@ paths:
                     machineId: fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
                     profile:
                       name: lenovo-h200
+                      revision: 3f2a9c1d7b4e
                       attributes:
                         OperatingModes_ChooseOperatingMode: MaximumPerformance
                     observation:
@@ -12241,6 +12247,7 @@ paths:
                       biosVersion: R3X318M
                       attributeRegistry: BiosAttributeRegistry.1.0.0
                       settingsAppliedAt: null
+                      appliedRevision: 3f2a9c1d7b4e
                       current:
                         OperatingModes_ChooseOperatingMode: CustomMode
                         SystemRecovery_POSTWatchdogTimerValue: 5
@@ -12320,6 +12327,231 @@ paths:
         and registry ID.
 
         Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
+  '/v2/org/{org}/nico/machine/{machineId}/bios/apply':
+    parameters:
+      - schema:
+          type: string
+        name: org
+        in: path
+        required: true
+        description: Name of the Org
+      - schema:
+          type: string
+        name: machineId
+        in: path
+        required: true
+        description: ID of the Machine
+    post:
+      summary: Apply Machine BIOS profile
+      tags:
+        - Machine
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineBiosApplyResponse'
+              examples:
+                example-1:
+                  value:
+                    accepted: true
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '409':
+          description: The Machine is not in maintenance, is not Ready, has an Instance, or has no desired boot interface
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NICoAPIError'
+              examples:
+                example-1:
+                  value:
+                    source: nico
+                    message: machine fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg is not in maintenance; put it in maintenance before applying its BIOS
+                    data: null
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: apply-machine-bios
+      description: |-
+        Re-check the BIOS and boot configuration of a Machine now and re-apply its
+        `bios-profile` when its BIOS differs, rebooting the Machine if the profile has to be
+        applied. The Machine must be in maintenance, Ready and without an Instance, and stays
+        in maintenance afterwards. Applying clears a persistent BIOS profile drift report, so
+        a profile that did not take before is applied again. Once the Machine has rebooted
+        and its BIOS matches the profile, the observation's `appliedRevision` is the
+        profile's `revision`.
+
+        Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
+  '/v2/org/{org}/nico/bios-profile':
+    parameters:
+      - schema:
+          type: string
+        name: org
+        in: path
+        required: true
+        description: Name of the Org
+    get:
+      summary: Retrieve all BIOS Profiles
+      tags:
+        - BIOS Profile
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          name: siteId
+          in: query
+          required: true
+          description: ID of the Site
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BiosProfileList'
+              examples:
+                example-1:
+                  value:
+                    profiles:
+                      - name: lenovo-h200
+                        vendor: Lenovo
+                        model: ThinkSystem SR680a V3
+                        attributeRegistry: BiosAttributeRegistry.1.0.0
+                        attributes:
+                          OperatingModes_ChooseOperatingMode: MaximumPerformance
+                          SystemRecovery_POSTWatchdogTimerValue: 5
+                        revision: 3f2a9c1d7b4e
+                        updatedAt: '2026-10-26T04:00:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: get-all-bios-profile
+      description: |-
+        List the BIOS Profiles stored in NICo for a Site, ordered by name. Profiles from the
+        site configuration are not listed.
+
+        Org must have an Infrastructure Provider entity and own the Site. User must have authorization role with `PROVIDER_ADMIN` suffix.
+  '/v2/org/{org}/nico/bios-profile/{name}':
+    parameters:
+      - schema:
+          type: string
+        name: org
+        in: path
+        required: true
+        description: Name of the Org
+      - schema:
+          type: string
+        name: name
+        in: path
+        required: true
+        description: Name of the BIOS Profile, as set in a Machine's `bios-profile` label
+    put:
+      summary: Create or Update BIOS Profile
+      tags:
+        - BIOS Profile
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          name: siteId
+          in: query
+          required: true
+          description: ID of the Site
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BiosProfileRequest'
+            examples:
+              example-1:
+                value:
+                  vendor: Lenovo
+                  model: ThinkSystem SR680a V3
+                  attributeRegistry: BiosAttributeRegistry.1.0.0
+                  attributes:
+                    OperatingModes_ChooseOperatingMode: MaximumPerformance
+                    SystemRecovery_POSTWatchdogTimerValue: 5
+                  revision: 3f2a9c1d7b4e
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BiosProfile'
+              examples:
+                example-1:
+                  value:
+                    name: lenovo-h200
+                    vendor: Lenovo
+                    model: ThinkSystem SR680a V3
+                    attributeRegistry: BiosAttributeRegistry.1.0.0
+                    attributes:
+                      OperatingModes_ChooseOperatingMode: MaximumPerformance
+                      SystemRecovery_POSTWatchdogTimerValue: 5
+                    revision: 3f2a9c1d7b4e
+                    updatedAt: '2026-10-26T04:00:00Z'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: update-bios-profile
+      description: |-
+        Create or replace the BIOS Profile with this name on the Site. NICo applies it the
+        next time it configures the BIOS of a Machine whose `bios-profile` label names it;
+        Machines in maintenance can apply it at once with the Machine BIOS apply endpoint.
+        `vendor` and `model` must match the Machine's BMC; a DMI vendor name such as
+        `Dell Inc.` is accepted, and spaces in `model` are treated as underscores.
+
+        Org must have an Infrastructure Provider entity and own the Site. User must have authorization role with `PROVIDER_ADMIN` suffix.
+    delete:
+      summary: Delete BIOS Profile
+      tags:
+        - BIOS Profile
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          name: siteId
+          in: query
+          required: true
+          description: ID of the Site
+      responses:
+        '204':
+          description: No Content
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: delete-bios-profile
+      description: |-
+        Delete the BIOS Profile with this name from the Site. Machines whose `bios-profile`
+        label names it fall back to a site configuration profile of the same name, if any.
+
+        Org must have an Infrastructure Provider entity and own the Site. User must have authorization role with `PROVIDER_ADMIN` suffix.
   '/v2/org/{org}/nico/machine/{machineId}/decommission':
     parameters:
       - schema:
@@ -19996,8 +20228,8 @@ components:
             - type: 'null'
           description: |-
             The named BIOS profile NICo applies to the Machine. Null when the Machine has no
-            `bios-profile` label, the label names a profile that is not configured, or the
-            profile's vendor or model does not match the Machine's BMC.
+            `bios-profile` label, the label names a profile that is neither stored nor
+            configured, or the profile's vendor or model does not match the Machine's BMC.
         observation:
           oneOf:
             - $ref: '#/components/schemas/MachineBiosObservation'
@@ -20006,14 +20238,20 @@ components:
     MachineBiosProfile:
       type: object
       title: MachineBiosProfile
-      description: A named BIOS profile from the site configuration
+      description: A named BIOS profile stored in NICo or, failing that, from the site configuration
       required:
         - name
+        - revision
         - attributes
       properties:
         name:
           type: string
           description: Name of the profile, as given by the Machine's `bios-profile` label
+        revision:
+          type:
+            - string
+            - 'null'
+          description: Revision of the stored profile, or null for a profile from the site configuration
         attributes:
           type: object
           additionalProperties: true
@@ -20028,6 +20266,7 @@ components:
         - biosVersion
         - attributeRegistry
         - settingsAppliedAt
+        - appliedRevision
         - current
         - pending
       properties:
@@ -20061,6 +20300,13 @@ components:
             - 'null'
           format: date-time
           description: Time the BMC reports for its last applied BIOS settings (`@Redfish.Settings.Time`), or null when it reports none
+        appliedRevision:
+          type:
+            - string
+            - 'null'
+          description: |-
+            Revision of the stored profile that NICo last found fully applied after a reboot,
+            or null when it has not verified one
         current:
           type: object
           additionalProperties: true
@@ -20069,6 +20315,92 @@ components:
           type: object
           additionalProperties: true
           description: BIOS attribute values that are set but wait for a reboot to apply; empty when nothing is pending
+    MachineBiosApplyResponse:
+      type: object
+      title: MachineBiosApplyResponse
+      description: Result of a request to apply a Machine's BIOS profile now
+      required:
+        - accepted
+      properties:
+        accepted:
+          type: boolean
+          description: Whether NICo started re-checking the Machine's BIOS and boot configuration
+    BiosProfileRequest:
+      type: object
+      title: BiosProfileRequest
+      description: Request data to create or replace a BIOS Profile
+      required:
+        - vendor
+        - model
+        - attributes
+      properties:
+        vendor:
+          type: string
+          description: Vendor of the Machines the profile is for, e.g. `Lenovo` or `Dell`
+        model:
+          type: string
+          description: Model of the Machines the profile is for, e.g. `ThinkSystem SR680a V3`
+        attributeRegistry:
+          type: string
+          description: ID of the Redfish attribute registry the attributes come from
+        attributes:
+          type: object
+          additionalProperties: true
+          description: BIOS attribute names and the values to set; every value must be a string, number or boolean
+        revision:
+          type: string
+          description: Revision of the profile. NICo derives one from the profile content when it is empty or omitted
+    BiosProfile:
+      type: object
+      title: BiosProfile
+      description: A BIOS Profile stored in NICo
+      required:
+        - name
+        - vendor
+        - model
+        - attributeRegistry
+        - attributes
+        - revision
+        - updatedAt
+      properties:
+        name:
+          type: string
+          description: Name of the profile, as set in a Machine's `bios-profile` label
+        vendor:
+          type: string
+          description: Vendor of the Machines the profile is for
+        model:
+          type: string
+          description: Model of the Machines the profile is for
+        attributeRegistry:
+          type:
+            - string
+            - 'null'
+          description: ID of the Redfish attribute registry the attributes come from, or null when none was given
+        attributes:
+          type: object
+          additionalProperties: true
+          description: BIOS attribute names and the values the profile sets
+        revision:
+          type: string
+          description: Revision of the profile
+        updatedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Time the profile was last stored
+    BiosProfileList:
+      type: object
+      title: BiosProfileList
+      description: BIOS Profiles stored in NICo for a Site
+      required:
+        - profiles
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/BiosProfile'
     MachineBiosAttributes:
       type: object
       title: MachineBiosAttributes

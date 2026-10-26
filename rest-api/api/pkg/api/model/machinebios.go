@@ -19,6 +19,7 @@ type APIMachineBios struct {
 
 type APIMachineBiosProfile struct {
 	Name       string          `json:"name"`
+	Revision   *string         `json:"revision"`
 	Attributes json.RawMessage `json:"attributes"`
 }
 
@@ -28,8 +29,13 @@ type APIMachineBiosObservation struct {
 	BiosVersion       *string         `json:"biosVersion"`
 	AttributeRegistry *string         `json:"attributeRegistry"`
 	SettingsAppliedAt *time.Time      `json:"settingsAppliedAt"`
+	AppliedRevision   *string         `json:"appliedRevision"`
 	Current           json.RawMessage `json:"current"`
 	Pending           json.RawMessage `json:"pending"`
+}
+
+type APIMachineBiosApplyResponse struct {
+	Accepted bool `json:"accepted"`
 }
 
 type APIMachineBiosAttributes struct {
@@ -62,6 +68,7 @@ func NewAPIMachineBios(machineID string, bios *corev1.MachineBios) (*APIMachineB
 		}
 		apiBios.Profile = &APIMachineBiosProfile{
 			Name:       profile.GetName(),
+			Revision:   profile.Revision,
 			Attributes: attributes,
 		}
 	}
@@ -79,6 +86,7 @@ func NewAPIMachineBios(machineID string, bios *corev1.MachineBios) (*APIMachineB
 			ObservedBy:        observation.GetObservedBy(),
 			BiosVersion:       observation.BiosVersion,
 			AttributeRegistry: observation.AttributeRegistry,
+			AppliedRevision:   observation.AppliedRevision,
 			Current:           current,
 			Pending:           pending,
 		}

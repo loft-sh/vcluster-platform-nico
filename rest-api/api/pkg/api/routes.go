@@ -834,6 +834,26 @@ func NewAPIRoutes(dbSession *cdb.Session, tc tClient.Client, tnc tClient.Namespa
 			Handler: apiHandler.NewGetMachineBiosAttributesHandler(dbSession, scp, cfg),
 		},
 		{
+			Path:    apiPathPrefix + "/machine/:id/bios/apply",
+			Method:  http.MethodPost,
+			Handler: apiHandler.NewApplyMachineBiosHandler(dbSession, scp, cfg),
+		},
+		{
+			Path:    apiPathPrefix + "/bios-profile",
+			Method:  http.MethodGet,
+			Handler: apiHandler.NewGetAllBiosProfileHandler(dbSession, scp, cfg),
+		},
+		{
+			Path:    apiPathPrefix + "/bios-profile/:name",
+			Method:  http.MethodPut,
+			Handler: apiHandler.NewUpsertBiosProfileHandler(dbSession, scp, cfg),
+		},
+		{
+			Path:    apiPathPrefix + "/bios-profile/:name",
+			Method:  http.MethodDelete,
+			Handler: apiHandler.NewDeleteBiosProfileHandler(dbSession, scp, cfg),
+		},
+		{
 			Path:    apiPathPrefix + "/machine/:id/decommission",
 			Method:  http.MethodPost,
 			Handler: apiHandler.NewDecommissionMachineHandler(dbSession, scp, cfg),

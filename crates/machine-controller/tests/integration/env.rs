@@ -164,6 +164,7 @@ impl EnvBuilder {
             bmc_credential_ops: controller_redfish_sim,
             ipmi_tool: carbide_ipmi::test_support(),
             site_config: runtime_config.machine_state_handler_site_config().into(),
+            named_bios_profiles: Default::default(),
             component_manager,
             credential_manager: credential_manager
                 .unwrap_or_else(|| api.credential_manager().clone()),

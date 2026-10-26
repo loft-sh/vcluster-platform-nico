@@ -76,6 +76,7 @@ pub mod machine_validation_suites;
 pub mod managed_host;
 pub mod measured_boot;
 pub mod migrations;
+pub mod named_bios_profile;
 pub mod network_devices;
 pub mod network_prefix;
 pub mod network_security_group;

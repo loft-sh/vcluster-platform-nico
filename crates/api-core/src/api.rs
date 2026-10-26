@@ -118,6 +118,8 @@ pub struct Api {
     pub(crate) node_jwt_validator: Option<Arc<crate::node_auth::NodeJwtValidator>>,
     pub(crate) console_log_source: Arc<dyn crate::console_logs::ConsoleLogSource>,
     pub(crate) bios_attribute_registries: crate::handlers::machine_bios::BiosAttributeRegistryCache,
+    pub(crate) named_bios_profiles:
+        carbide_machine_controller::named_bios_profiles::NamedBiosProfileCache,
     pub(crate) cancel_token: CancellationToken,
 }
 
@@ -1667,6 +1669,34 @@ impl Forge for Api {
         request: Request<MachineId>,
     ) -> Result<Response<rpc::MachineBiosAttributes>, Status> {
         crate::handlers::machine_bios::get_machine_bios_attributes(self, request).await
+    }
+
+    async fn apply_machine_bios(
+        &self,
+        request: Request<MachineId>,
+    ) -> Result<Response<rpc::ApplyMachineBiosResponse>, Status> {
+        crate::handlers::machine_bios::apply_machine_bios(self, request).await
+    }
+
+    async fn upsert_bios_profile(
+        &self,
+        request: Request<rpc::BiosProfile>,
+    ) -> Result<Response<rpc::BiosProfile>, Status> {
+        crate::handlers::machine_bios::upsert_bios_profile(self, request).await
+    }
+
+    async fn delete_bios_profile(
+        &self,
+        request: Request<rpc::BiosProfileName>,
+    ) -> Result<Response<()>, Status> {
+        crate::handlers::machine_bios::delete_bios_profile(self, request).await
+    }
+
+    async fn list_bios_profiles(
+        &self,
+        request: Request<rpc::ListBiosProfilesRequest>,
+    ) -> Result<Response<rpc::BiosProfileList>, Status> {
+        crate::handlers::machine_bios::list_bios_profiles(self, request).await
     }
 
     async fn get_network_topology(

@@ -225,6 +225,10 @@ const (
 	Forge_GetMachineBios_FullMethodName                                     = "/forge.Forge/GetMachineBios"
 	Forge_RefreshMachineBios_FullMethodName                                 = "/forge.Forge/RefreshMachineBios"
 	Forge_GetMachineBiosAttributes_FullMethodName                           = "/forge.Forge/GetMachineBiosAttributes"
+	Forge_ApplyMachineBios_FullMethodName                                   = "/forge.Forge/ApplyMachineBios"
+	Forge_UpsertBiosProfile_FullMethodName                                  = "/forge.Forge/UpsertBiosProfile"
+	Forge_DeleteBiosProfile_FullMethodName                                  = "/forge.Forge/DeleteBiosProfile"
+	Forge_ListBiosProfiles_FullMethodName                                   = "/forge.Forge/ListBiosProfiles"
 	Forge_GetNetworkTopology_FullMethodName                                 = "/forge.Forge/GetNetworkTopology"
 	Forge_FindNetworkDevicesByDeviceIds_FullMethodName                      = "/forge.Forge/FindNetworkDevicesByDeviceIds"
 	Forge_CreateCredential_FullMethodName                                   = "/forge.Forge/CreateCredential"
@@ -986,6 +990,10 @@ type ForgeClient interface {
 	GetMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBios, error)
 	RefreshMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBios, error)
 	GetMachineBiosAttributes(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBiosAttributes, error)
+	ApplyMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*ApplyMachineBiosResponse, error)
+	UpsertBiosProfile(ctx context.Context, in *BiosProfile, opts ...grpc.CallOption) (*BiosProfile, error)
+	DeleteBiosProfile(ctx context.Context, in *BiosProfileName, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	ListBiosProfiles(ctx context.Context, in *ListBiosProfilesRequest, opts ...grpc.CallOption) (*BiosProfileList, error)
 	// Get Network topology
 	GetNetworkTopology(ctx context.Context, in *NetworkTopologyRequest, opts ...grpc.CallOption) (*NetworkTopologyData, error)
 	FindNetworkDevicesByDeviceIds(ctx context.Context, in *NetworkDeviceIdList, opts ...grpc.CallOption) (*NetworkTopologyData, error)
@@ -3666,6 +3674,46 @@ func (c *forgeClient) GetMachineBiosAttributes(ctx context.Context, in *MachineI
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MachineBiosAttributes)
 	err := c.cc.Invoke(ctx, Forge_GetMachineBiosAttributes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) ApplyMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*ApplyMachineBiosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApplyMachineBiosResponse)
+	err := c.cc.Invoke(ctx, Forge_ApplyMachineBios_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) UpsertBiosProfile(ctx context.Context, in *BiosProfile, opts ...grpc.CallOption) (*BiosProfile, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BiosProfile)
+	err := c.cc.Invoke(ctx, Forge_UpsertBiosProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) DeleteBiosProfile(ctx context.Context, in *BiosProfileName, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Forge_DeleteBiosProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) ListBiosProfiles(ctx context.Context, in *ListBiosProfilesRequest, opts ...grpc.CallOption) (*BiosProfileList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BiosProfileList)
+	err := c.cc.Invoke(ctx, Forge_ListBiosProfiles_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -7521,6 +7569,10 @@ type ForgeServer interface {
 	GetMachineBios(context.Context, *MachineId) (*MachineBios, error)
 	RefreshMachineBios(context.Context, *MachineId) (*MachineBios, error)
 	GetMachineBiosAttributes(context.Context, *MachineId) (*MachineBiosAttributes, error)
+	ApplyMachineBios(context.Context, *MachineId) (*ApplyMachineBiosResponse, error)
+	UpsertBiosProfile(context.Context, *BiosProfile) (*BiosProfile, error)
+	DeleteBiosProfile(context.Context, *BiosProfileName) (*emptypb.Empty, error)
+	ListBiosProfiles(context.Context, *ListBiosProfilesRequest) (*BiosProfileList, error)
 	// Get Network topology
 	GetNetworkTopology(context.Context, *NetworkTopologyRequest) (*NetworkTopologyData, error)
 	FindNetworkDevicesByDeviceIds(context.Context, *NetworkDeviceIdList) (*NetworkTopologyData, error)
@@ -8775,6 +8827,18 @@ func (UnimplementedForgeServer) RefreshMachineBios(context.Context, *MachineId) 
 }
 func (UnimplementedForgeServer) GetMachineBiosAttributes(context.Context, *MachineId) (*MachineBiosAttributes, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMachineBiosAttributes not implemented")
+}
+func (UnimplementedForgeServer) ApplyMachineBios(context.Context, *MachineId) (*ApplyMachineBiosResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApplyMachineBios not implemented")
+}
+func (UnimplementedForgeServer) UpsertBiosProfile(context.Context, *BiosProfile) (*BiosProfile, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpsertBiosProfile not implemented")
+}
+func (UnimplementedForgeServer) DeleteBiosProfile(context.Context, *BiosProfileName) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteBiosProfile not implemented")
+}
+func (UnimplementedForgeServer) ListBiosProfiles(context.Context, *ListBiosProfilesRequest) (*BiosProfileList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBiosProfiles not implemented")
 }
 func (UnimplementedForgeServer) GetNetworkTopology(context.Context, *NetworkTopologyRequest) (*NetworkTopologyData, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetNetworkTopology not implemented")
@@ -13450,6 +13514,78 @@ func _Forge_GetMachineBiosAttributes_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ForgeServer).GetMachineBiosAttributes(ctx, req.(*MachineId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_ApplyMachineBios_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MachineId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).ApplyMachineBios(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_ApplyMachineBios_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).ApplyMachineBios(ctx, req.(*MachineId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_UpsertBiosProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BiosProfile)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).UpsertBiosProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_UpsertBiosProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).UpsertBiosProfile(ctx, req.(*BiosProfile))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_DeleteBiosProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BiosProfileName)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).DeleteBiosProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_DeleteBiosProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).DeleteBiosProfile(ctx, req.(*BiosProfileName))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_ListBiosProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBiosProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).ListBiosProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_ListBiosProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).ListBiosProfiles(ctx, req.(*ListBiosProfilesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -20427,6 +20563,22 @@ var Forge_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMachineBiosAttributes",
 			Handler:    _Forge_GetMachineBiosAttributes_Handler,
+		},
+		{
+			MethodName: "ApplyMachineBios",
+			Handler:    _Forge_ApplyMachineBios_Handler,
+		},
+		{
+			MethodName: "UpsertBiosProfile",
+			Handler:    _Forge_UpsertBiosProfile_Handler,
+		},
+		{
+			MethodName: "DeleteBiosProfile",
+			Handler:    _Forge_DeleteBiosProfile_Handler,
+		},
+		{
+			MethodName: "ListBiosProfiles",
+			Handler:    _Forge_ListBiosProfiles_Handler,
 		},
 		{
 			MethodName: "GetNetworkTopology",

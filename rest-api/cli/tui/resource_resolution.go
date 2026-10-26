@@ -109,6 +109,9 @@ func GeneratedPathResourceDescriptor(commandName, parameter string) GeneratedRes
 	if strings.HasPrefix(commandName, "measured-boot") && strings.EqualFold(parameter, "id") {
 		descriptor.FreeFormReason = "measured-boot approvals and their selected machine or profile IDs share this parameter; enter the ID that matches --selector"
 	}
+	if strings.HasPrefix(commandName, "bios-profile ") && parameter == "name" {
+		descriptor.FreeFormReason = "BIOS profiles are listed per Site and siteId is collected after path parameters; enter the name returned by bios-profile list"
+	}
 	return descriptor
 }
 

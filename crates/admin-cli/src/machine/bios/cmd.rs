@@ -41,6 +41,7 @@ struct BiosReport {
 #[derive(Debug, Serialize)]
 struct ProfileReport {
     name: String,
+    revision: Option<String>,
     attributes: Map<String, Value>,
 }
 
@@ -53,6 +54,7 @@ struct ObservationReport {
     settings_applied_at: Option<String>,
     current: Map<String, Value>,
     pending: Map<String, Value>,
+    applied_revision: Option<String>,
 }
 
 impl TryFrom<forgerpc::MachineBios> for BiosReport {
@@ -66,6 +68,7 @@ impl TryFrom<forgerpc::MachineBios> for BiosReport {
                 .map(|profile| {
                     Ok::<_, serde_json::Error>(ProfileReport {
                         name: profile.name,
+                        revision: profile.revision,
                         attributes: serde_json::from_str(&profile.attributes_json)?,
                     })
                 })
@@ -83,6 +86,7 @@ impl TryFrom<forgerpc::MachineBios> for BiosReport {
                             .map(|time| time.to_string()),
                         current: serde_json::from_str(&observation.current_json)?,
                         pending: serde_json::from_str(&observation.pending_json)?,
+                        applied_revision: observation.applied_revision,
                     })
                 })
                 .transpose()?,
@@ -151,6 +155,22 @@ pub(super) async fn handle_refresh(
     print_bios(BiosReport::try_from(bios)?, output_format)
 }
 
+pub(super) async fn handle_apply(args: BiosArgs, api_client: &ApiClient) -> CarbideCliResult<()> {
+    let response = api_client.apply_machine_bios(args.machine_id).await?;
+    if response.accepted {
+        println!(
+            "Applying the bios-profile of machine {}; NICo re-checks its BIOS and boot configuration now",
+            args.machine_id
+        );
+    } else {
+        println!(
+            "NICo did not accept applying the bios-profile of machine {}",
+            args.machine_id
+        );
+    }
+    Ok(())
+}
+
 pub(super) async fn handle_attributes(
     args: BiosArgs,
     output_format: OutputFormat,
@@ -202,6 +222,18 @@ fn render_bios(report: &BiosReport) -> String {
         "{:<width$} {}",
         "Profile:",
         dash(profile.map(|profile| &profile.name))
+    );
+    let _ = writeln!(
+        out,
+        "{:<width$} {}",
+        "Profile revision:",
+        dash(profile.and_then(|profile| profile.revision.as_ref()))
+    );
+    let _ = writeln!(
+        out,
+        "{:<width$} {}",
+        "Applied revision:",
+        dash(observation.and_then(|observation| observation.applied_revision.as_ref()))
     );
     let _ = writeln!(
         out,
@@ -336,6 +368,7 @@ mod tests {
             machine_id: None,
             profile: Some(ProfileReport {
                 name: "lenovo-h200".to_string(),
+                revision: Some("3f2a9c1d7b4e".to_string()),
                 attributes: object(json!({
                     "OperatingModes_ChooseOperatingMode": "MaximumPerformance",
                     "Processors_HyperThreading": "Disabled"
@@ -354,11 +387,14 @@ mod tests {
                 pending: object(json!({
                     "OperatingModes_ChooseOperatingMode": "MaximumPerformance"
                 })),
+                applied_revision: Some("9b8a7c6d5e4f".to_string()),
             }),
         });
 
         for expected in [
             "Profile:              lenovo-h200",
+            "Profile revision:     3f2a9c1d7b4e",
+            "Applied revision:     9b8a7c6d5e4f",
             "Observed at:          2026-10-25T23:52:15Z (refresh)",
             "BIOS version:         R3X318M",
             "Attribute registry:   BiosAttributeRegistry.1.0.0",
@@ -385,6 +421,8 @@ mod tests {
 
         for expected in [
             "Profile:              -",
+            "Profile revision:     -",
+            "Applied revision:     -",
             "Observed at:          -",
             "BIOS version:         -",
             "| (none)    |         |         |         |",

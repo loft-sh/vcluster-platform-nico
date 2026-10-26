@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	corev1 "github.com/NVIDIA/infra-controller/rest-api/proto/core/gen/v1"
@@ -43,7 +44,37 @@ func TestNewAPIMachineBios(t *testing.T) {
 					"biosVersion": null,
 					"attributeRegistry": null,
 					"settingsAppliedAt": "2026-10-25T23:52:15Z",
+					"appliedRevision": null,
 					"current": {"A": "Disabled", "B": 5},
+					"pending": {"A": "Enabled"}
+				}
+			}`,
+		},
+		{
+			name: "the profile revision and the revision NICo verified are both returned",
+			bios: &corev1.MachineBios{
+				Profile: &corev1.MachineBiosProfile{
+					Name:           "lenovo-h200",
+					AttributesJson: `{"A":"Disabled"}`,
+					Revision:       proto.String("3f2a9c1d7b4e"),
+				},
+				Observation: func() *corev1.MachineBiosObservation {
+					applied := observation(`{"A":"Disabled"}`)
+					applied.AppliedRevision = proto.String("9b8a7c6d5e4f")
+					return applied
+				}(),
+			},
+			expectJSON: `{
+				"machineId": "fm100ht-url",
+				"profile": {"name": "lenovo-h200", "revision": "3f2a9c1d7b4e", "attributes": {"A": "Disabled"}},
+				"observation": {
+					"observedAt": "2026-10-25T23:50:00Z",
+					"observedBy": "post_reboot",
+					"biosVersion": null,
+					"attributeRegistry": null,
+					"settingsAppliedAt": "2026-10-25T23:52:15Z",
+					"appliedRevision": "9b8a7c6d5e4f",
+					"current": {"A": "Disabled"},
 					"pending": {"A": "Enabled"}
 				}
 			}`,

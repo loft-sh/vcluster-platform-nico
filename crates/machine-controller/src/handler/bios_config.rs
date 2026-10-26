@@ -19,10 +19,11 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use carbide_redfish::boot_interface::BootInterfaceTarget;
 use carbide_redfish::libredfish::error::state_handler_redfish_error as redfish_error;
-use carbide_uuid::machine::AsMachineId;
+use carbide_uuid::machine::{AsMachineId, MachineId};
 use chrono::{DateTime, Utc};
 use eyre::eyre;
 use futures_util::FutureExt;
@@ -49,12 +50,13 @@ use super::{
 use crate::config::{
     MachineStateControllerConfig, MachineStateHandlerSiteConfig, NamedBiosProfile,
 };
-use crate::context::MachineStateHandlerContextObjects;
+use crate::context::{MachineStateHandlerContextObjects, MachineStateHandlerServices};
+use crate::named_bios_profiles::StoredBiosProfiles;
 use crate::write_ops::MachineWriteOp;
 
 const BIOS_PROFILE_LABEL: &str = "bios-profile";
 const BIOS_PROFILE_HEALTH_SOURCE: &str = "bios-profile";
-const BIOS_PROFILE_DRIFT_HEALTH_SOURCE: &str = "bios-profile-drift";
+pub const BIOS_PROFILE_DRIFT_HEALTH_SOURCE: &str = "bios-profile-drift";
 const BIOS_PROFILE_DRIFT_PROBE: &str = "BiosProfileDrift";
 const BIOS_PROFILE_UNKNOWN_ATTRIBUTES_PROBE: &str = "BiosProfileUnknownAttributes";
 const BIOS_PROFILE_DRIFT_REMEDIATING_PROBE: &str = "BiosProfileDriftRemediating";
@@ -71,12 +73,15 @@ impl HostBiosProfiles {
     async fn select(
         redfish_client: &dyn Redfish,
         labels: &HashMap<String, String>,
+        stored: &StoredBiosProfiles,
         site_config: &MachineStateHandlerSiteConfig,
     ) -> Result<Self, RedfishError> {
         let Some(name) = labels.get(BIOS_PROFILE_LABEL) else {
             return Ok(Self::SiteDefault);
         };
-        let Some(profile) = site_config.named_bios_profiles.get(name) else {
+        let Some(SelectedBiosProfile { profile, .. }) =
+            named_bios_profile(labels, stored, &site_config.named_bios_profiles)
+        else {
             return Ok(Self::Fallback(format!(
                 "bios-profile {name} is not defined in named_bios_profiles"
             )));
@@ -189,6 +194,7 @@ impl HostBiosProfiles {
 #[derive(Debug, PartialEq)]
 pub(super) struct BiosProfileDrift {
     name: String,
+    revision: Option<String>,
     drifted: Vec<String>,
     unknown: Vec<String>,
 }
@@ -198,31 +204,91 @@ pub(super) struct BiosReading {
     pending: HashMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct SelectedBiosProfile<'a> {
+    pub name: &'a str,
+    pub profile: &'a NamedBiosProfile,
+    pub revision: Option<&'a str>,
+}
+
 fn named_bios_profile<'a>(
     labels: &HashMap<String, String>,
-    named_bios_profiles: &'a HashMap<String, NamedBiosProfile>,
-) -> Option<(&'a String, &'a NamedBiosProfile)> {
-    labels
-        .get(BIOS_PROFILE_LABEL)
-        .and_then(|name| named_bios_profiles.get_key_value(name))
+    stored: &'a StoredBiosProfiles,
+    configured: &'a HashMap<String, NamedBiosProfile>,
+) -> Option<SelectedBiosProfile<'a>> {
+    let name = labels.get(BIOS_PROFILE_LABEL)?;
+    stored
+        .get_key_value(name)
+        .map(|(name, stored)| SelectedBiosProfile {
+            name,
+            profile: &stored.profile,
+            revision: Some(&stored.revision),
+        })
+        .or_else(|| {
+            configured
+                .get_key_value(name)
+                .map(|(name, profile)| SelectedBiosProfile {
+                    name,
+                    profile,
+                    revision: None,
+                })
+        })
 }
 
 pub fn named_bios_profile_for_explored_host<'a>(
     labels: &HashMap<String, String>,
-    named_bios_profiles: &'a HashMap<String, NamedBiosProfile>,
+    stored: &'a StoredBiosProfiles,
+    configured: &'a HashMap<String, NamedBiosProfile>,
     report: &EndpointExplorationReport,
-) -> Option<(&'a String, &'a NamedBiosProfile)> {
-    let (name, profile) = named_bios_profile(labels, named_bios_profiles)?;
+) -> Option<SelectedBiosProfile<'a>> {
+    let selected = named_bios_profile(labels, stored, configured)?;
     let vendor_matches = report.vendor
         == Some(carbide_redfish::libredfish::conv::bmc_vendor(
-            profile.vendor,
+            selected.profile.vendor,
         ));
     let model_matches = report
         .systems
         .first()
         .and_then(|system| system.model.as_deref())
-        .is_some_and(|model| libredfish::model_coerce(model) == profile.model);
-    (vendor_matches && model_matches).then_some((name, profile))
+        .is_some_and(|model| libredfish::model_coerce(model) == selected.profile.model);
+    (vendor_matches && model_matches).then_some(selected)
+}
+
+pub fn bios_apply_refusal(
+    machine_id: &MachineId,
+    state: &ManagedHostState,
+    in_maintenance: bool,
+    has_instance: bool,
+) -> Option<String> {
+    if !in_maintenance {
+        return Some(format!(
+            "machine {machine_id} is not in maintenance; put it in maintenance before applying its BIOS"
+        ));
+    }
+    if has_instance {
+        return Some(format!(
+            "machine {machine_id} has an instance; release it before applying its BIOS"
+        ));
+    }
+    if !matches!(state, ManagedHostState::Ready) {
+        return Some(format!(
+            "machine {machine_id} is in state {state}; its BIOS can only be applied while it is Ready"
+        ));
+    }
+    None
+}
+
+async fn labelled_bios_profiles(
+    services: &MachineStateHandlerServices,
+    labels: &HashMap<String, String>,
+) -> Result<Arc<StoredBiosProfiles>, db::DatabaseError> {
+    if !labels.contains_key(BIOS_PROFILE_LABEL) {
+        return Ok(Arc::default());
+    }
+    services
+        .named_bios_profiles
+        .profiles(&services.db_pool)
+        .await
 }
 
 #[derive(Debug, PartialEq)]
@@ -236,13 +302,15 @@ pub(super) enum BiosProfileDriftAction {
 pub(super) async fn inspect_bios_profile_drift(
     redfish_client: &dyn Redfish,
     labels: &HashMap<String, String>,
+    stored: &StoredBiosProfiles,
     site_config: &MachineStateHandlerSiteConfig,
 ) -> Result<Option<(BiosProfileDrift, BiosReading)>, RedfishError> {
-    let Some((name, profile)) = named_bios_profile(labels, &site_config.named_bios_profiles) else {
+    let Some(selected) = named_bios_profile(labels, stored, &site_config.named_bios_profiles)
+    else {
         return Ok(None);
     };
     if !matches!(
-        HostBiosProfiles::select(redfish_client, labels, site_config).await?,
+        HostBiosProfiles::select(redfish_client, labels, stored, site_config).await?,
         HostBiosProfiles::Named(_)
     ) {
         return Ok(None);
@@ -250,16 +318,15 @@ pub(super) async fn inspect_bios_profile_drift(
     let bios = redfish_client.bios().await?;
     let current = libredfish::jsonmap::get_object(&bios, "Attributes", "Bios")?;
     let pending = redfish_client.pending().await?;
-    let drift = compare_bios_profile(name, profile, current, &pending);
+    let drift = compare_bios_profile(&selected, current, &pending);
     Ok(Some((drift, BiosReading { bios, pending })))
 }
 
-fn record_bios_observation(
-    ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
+fn bios_observation(
     host: &HostMachine,
     reading: BiosReading,
     observed_by: BiosObservationSource,
-) {
+) -> Option<MachineBiosObservation> {
     let bios_version = host
         .status
         .hardware_info
@@ -267,14 +334,33 @@ fn record_bios_observation(
         .and_then(|info| info.dmi_data.as_ref())
         .map(|dmi| dmi.bios_version.clone())
         .filter(|version| !version.is_empty());
-    let Some(observation) = MachineBiosObservation::from_bios_resource(
+    MachineBiosObservation::from_bios_resource(
         host.id.to_machine_id(),
         observed_by,
         Utc::now(),
         bios_version,
         &reading.bios,
         reading.pending,
-    ) else {
+    )
+}
+
+fn post_reboot_bios_observation(
+    host: &HostMachine,
+    drift: &BiosProfileDrift,
+    reading: BiosReading,
+) -> Option<MachineBiosObservation> {
+    let mut observation = bios_observation(host, reading, BiosObservationSource::PostReboot)?;
+    observation.applied_revision = (drift.drifted.is_empty() && drift.unknown.is_empty())
+        .then(|| drift.revision.clone())
+        .flatten();
+    Some(observation)
+}
+
+fn record_bios_observation(
+    ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
+    observation: Option<MachineBiosObservation>,
+) {
+    let Some(observation) = observation else {
         return;
     };
     let write: WriteOpFn = Box::new(move |txn| {
@@ -288,14 +374,13 @@ fn record_bios_observation(
 }
 
 fn compare_bios_profile(
-    name: &str,
-    profile: &NamedBiosProfile,
+    selected: &SelectedBiosProfile<'_>,
     current: &serde_json::Map<String, serde_json::Value>,
     pending: &HashMap<String, serde_json::Value>,
 ) -> BiosProfileDrift {
     let mut drifted = Vec::new();
     let mut unknown = Vec::new();
-    for (attribute, want) in &profile.attributes {
+    for (attribute, want) in &selected.profile.attributes {
         match current.get(attribute) {
             None => unknown.push(attribute.clone()),
             Some(have) if bios_value_matches(have, want) => {}
@@ -309,7 +394,8 @@ fn compare_bios_profile(
     drifted.sort();
     unknown.sort();
     BiosProfileDrift {
-        name: name.to_string(),
+        name: selected.name.to_string(),
+        revision: selected.revision.map(str::to_string),
         drifted,
         unknown,
     }
@@ -357,16 +443,31 @@ pub(super) async fn bios_profile_needs_reapply(
     ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
 ) -> bool {
     let host = &mh_snapshot.host_snapshot;
+    let stored = match labelled_bios_profiles(ctx.services, &host.metadata.labels).await {
+        Ok(stored) => stored,
+        Err(error) => {
+            tracing::warn!(
+                machine_id = %host.id,
+                %error,
+                "Could not load the stored BIOS profiles; not re-applying the bios-profile"
+            );
+            return false;
+        }
+    };
     match inspect_bios_profile_drift(
         redfish_client,
         &host.metadata.labels,
+        &stored,
         &ctx.services.site_config,
     )
     .await
     {
         Ok(inspection) => {
             let drift = inspection.map(|(drift, reading)| {
-                record_bios_observation(ctx, host, reading, BiosObservationSource::LifecycleGate);
+                record_bios_observation(
+                    ctx,
+                    bios_observation(host, reading, BiosObservationSource::LifecycleGate),
+                );
                 drift
             });
             let action = bios_profile_drift_action(drift.as_ref(), bios_profile_persistent(host));
@@ -390,16 +491,28 @@ pub(super) async fn verify_bios_profile_after_reboot(
     ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
 ) {
     let host = &mh_snapshot.host_snapshot;
+    let stored = match labelled_bios_profiles(ctx.services, &host.metadata.labels).await {
+        Ok(stored) => stored,
+        Err(error) => {
+            tracing::warn!(
+                machine_id = %host.id,
+                %error,
+                "Could not load the stored BIOS profiles to verify the host BIOS after the reboot"
+            );
+            return;
+        }
+    };
     match inspect_bios_profile_drift(
         redfish_client,
         &host.metadata.labels,
+        &stored,
         &ctx.services.site_config,
     )
     .await
     {
         Ok(inspection) => {
             let drift = inspection.map(|(drift, reading)| {
-                record_bios_observation(ctx, host, reading, BiosObservationSource::PostReboot);
+                record_bios_observation(ctx, post_reboot_bios_observation(host, &drift, reading));
                 drift
             });
             let action = bios_profile_drift_action(drift.as_ref(), true);
@@ -619,9 +732,12 @@ pub(super) async fn configure_host_bios(
     boot_interface: Option<&BootInterfaceTarget>,
     retry_count: u32,
 ) -> Result<BiosConfigOutcome, StateHandlerError> {
+    let stored =
+        labelled_bios_profiles(ctx.services, &mh_snapshot.host_snapshot.metadata.labels).await?;
     let setup_result = match HostBiosProfiles::select(
         redfish_client,
         &mh_snapshot.host_snapshot.metadata.labels,
+        &stored,
         &ctx.services.site_config,
     )
     .await
@@ -1055,6 +1171,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::named_bios_profiles::StoredBiosProfile;
 
     #[tokio::test]
     async fn host_bios_profiles_follow_the_label_and_host_identity() {
@@ -1124,7 +1241,7 @@ mod tests {
                     .into_iter()
                     .collect();
                 async move {
-                    HostBiosProfiles::select(client, &labels, site_config)
+                    HostBiosProfiles::select(client, &labels, &StoredBiosProfiles::new(), site_config)
                         .await
                         .map_err(|e| e.to_string())
                 }
@@ -1229,6 +1346,7 @@ mod tests {
     fn drift(drifted: &[&str], unknown: &[&str]) -> BiosProfileDrift {
         BiosProfileDrift {
             name: "lenovo-h200".to_string(),
+            revision: None,
             drifted: drifted
                 .iter()
                 .map(|attribute| attribute.to_string())
@@ -1337,12 +1455,15 @@ mod tests {
                     .into_iter()
                     .collect();
                 async move {
-                    inspect_bios_profile_drift(client, &labels, site_config)
-                        .await
-                        .map(|inspection| {
-                            inspection.map(|(drift, _)| (drift.drifted, drift.unknown))
-                        })
-                        .map_err(|e| e.to_string())
+                    inspect_bios_profile_drift(
+                        client,
+                        &labels,
+                        &StoredBiosProfiles::new(),
+                        site_config,
+                    )
+                    .await
+                    .map(|inspection| inspection.map(|(drift, _)| (drift.drifted, drift.unknown)))
+                    .map_err(|e| e.to_string())
                 }
             },
         )
@@ -1376,8 +1497,13 @@ mod tests {
                     .map(|name| (BIOS_PROFILE_LABEL.to_string(), name.to_string()))
                     .into_iter()
                     .collect();
-                named_bios_profile_for_explored_host(&labels, &named_bios_profiles, &report)
-                    .map(|(name, _)| name.clone())
+                named_bios_profile_for_explored_host(
+                    &labels,
+                    &StoredBiosProfiles::new(),
+                    &named_bios_profiles,
+                    &report,
+                )
+                .map(|selected| selected.name.to_string())
             };
             "the recipe the gate applies" {
                 (Some("lenovo-h200"), report(BMCVendor::Lenovo, Some("ThinkSystem SR680a V3")))
@@ -1391,6 +1517,172 @@ mod tests {
                 (Some("lenovo-h200"), report(BMCVendor::Lenovo, None)) => None,
             }
         );
+    }
+
+    fn lenovo_recipe(value: &str) -> NamedBiosProfile {
+        NamedBiosProfile {
+            vendor: RedfishVendor::Lenovo,
+            model: "ThinkSystem_SR680a_V3".to_string(),
+            attributes: HashMap::from([("VTd".to_string(), json!(value))]),
+        }
+    }
+
+    #[test]
+    fn stored_bios_profiles_take_precedence_over_configured_ones() {
+        let stored = StoredBiosProfiles::from([
+            (
+                "lenovo-h200".to_string(),
+                StoredBiosProfile {
+                    profile: lenovo_recipe("Disabled"),
+                    revision: "3f2a9c1d7b4e".to_string(),
+                },
+            ),
+            (
+                "lenovo-h200-stored".to_string(),
+                StoredBiosProfile {
+                    profile: lenovo_recipe("Enabled"),
+                    revision: "9b8a7c6d5e4f".to_string(),
+                },
+            ),
+        ]);
+        let configured = HashMap::from([
+            ("lenovo-h200".to_string(), lenovo_recipe("Enabled")),
+            ("lenovo-h200-config".to_string(), lenovo_recipe("Enabled")),
+        ]);
+        value_scenarios!(
+            run = |label: Option<&str>| {
+                let labels: HashMap<String, String> = label
+                    .map(|name| (BIOS_PROFILE_LABEL.to_string(), name.to_string()))
+                    .into_iter()
+                    .collect();
+                named_bios_profile(&labels, &stored, &configured).map(|selected| {
+                    (
+                        selected.name.to_string(),
+                        selected.profile.attributes["VTd"].clone(),
+                        selected.revision.map(str::to_string),
+                    )
+                })
+            };
+            "a stored profile wins over the configured profile of the same name" {
+                Some("lenovo-h200") => Some(("lenovo-h200".to_string(), json!("Disabled"), Some("3f2a9c1d7b4e".to_string()))),
+            }
+            "either source alone is used" {
+                Some("lenovo-h200-stored") => Some(("lenovo-h200-stored".to_string(), json!("Enabled"), Some("9b8a7c6d5e4f".to_string()))),
+                Some("lenovo-h200-config") => Some(("lenovo-h200-config".to_string(), json!("Enabled"), None)),
+            }
+            "no profile" {
+                None => None,
+                Some("missing") => None,
+            }
+        );
+    }
+
+    #[test]
+    fn bios_is_applied_on_demand_only_to_an_idle_host_in_maintenance() {
+        let machine_id =
+            MachineId::from_str("fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg")
+                .unwrap();
+        value_scenarios!(
+            run = |(state, in_maintenance, has_instance): (ManagedHostState, bool, bool)| {
+                bios_apply_refusal(&machine_id, &state, in_maintenance, has_instance)
+            };
+            "an idle Ready host in maintenance is applied now" {
+                (ManagedHostState::Ready, true, false) => None,
+            }
+            "maintenance is required" {
+                (ManagedHostState::Ready, false, false) => Some(format!(
+                    "machine {machine_id} is not in maintenance; put it in maintenance before applying its BIOS"
+                )),
+            }
+            "a host with an instance is refused" {
+                (ManagedHostState::Ready, true, true) => Some(format!(
+                    "machine {machine_id} has an instance; release it before applying its BIOS"
+                )),
+            }
+            "a host that is not Ready is refused" {
+                (ManagedHostState::RotatingBmc { retry_count: 0 }, true, false) => Some(format!(
+                    "machine {machine_id} is in state {}; its BIOS can only be applied while it is Ready",
+                    ManagedHostState::RotatingBmc { retry_count: 0 }
+                )),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_matching_post_reboot_check_records_the_applied_revision() {
+        let sim = RedfishSim::default();
+        let client = sim
+            .create_client(
+                "bios-profile-revision-host",
+                None,
+                RedfishAuth::Anonymous,
+                None,
+            )
+            .await
+            .unwrap();
+        sim.set_service_root_vendor(Some("Lenovo".to_string()));
+        sim.set_system_model("ThinkSystem SR680a V3");
+        let mut site_config = MachineStateHandlerSiteConfig::test_default();
+        site_config.named_bios_profiles =
+            HashMap::from([("lenovo-h200".to_string(), lenovo_recipe("Enabled"))]);
+        let stored = StoredBiosProfiles::from([(
+            "lenovo-h200".to_string(),
+            StoredBiosProfile {
+                profile: lenovo_recipe("Disabled"),
+                revision: "3f2a9c1d7b4e".to_string(),
+            },
+        )]);
+        let mut host =
+            model::test_support::machine_snapshot::managed_host_state_snapshot().host_snapshot;
+        host.metadata
+            .labels
+            .insert(BIOS_PROFILE_LABEL.to_string(), "lenovo-h200".to_string());
+        let (sim, client, site_config, stored, host) =
+            (&sim, client.as_ref(), &site_config, &stored, &host);
+
+        check_cases_async(
+            [
+                Case {
+                    scenario: "the stored recipe matches after the reboot",
+                    input: (json!({"VTd": "Disabled"}), stored),
+                    expect: Yields(Some(Some("3f2a9c1d7b4e".to_string()))),
+                },
+                Case {
+                    scenario: "a recipe that did not take records no revision",
+                    input: (json!({"VTd": "Enabled"}), stored),
+                    expect: Yields(Some(None)),
+                },
+                Case {
+                    scenario: "an attribute the BMC does not report records no revision",
+                    input: (json!({"Other": "Enabled"}), stored),
+                    expect: Yields(Some(None)),
+                },
+                Case {
+                    scenario: "a configured recipe has no revision",
+                    input: (json!({"VTd": "Enabled"}), &StoredBiosProfiles::new()),
+                    expect: Yields(Some(None)),
+                },
+            ],
+            move |(current, stored): (serde_json::Value, &StoredBiosProfiles)| {
+                sim.set_bios_attributes(HashMap::from([("Attributes".to_string(), current)]));
+                async move {
+                    let (drift, reading) = inspect_bios_profile_drift(
+                        client,
+                        &host.metadata.labels,
+                        stored,
+                        site_config,
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .expect("the labelled recipe applies to this host");
+                    Ok::<_, String>(
+                        post_reboot_bios_observation(host, &drift, reading)
+                            .map(|observation| observation.applied_revision),
+                    )
+                }
+            },
+        )
+        .await;
     }
 
     #[test]
@@ -1440,8 +1732,11 @@ mod tests {
         value_scenarios!(
             run = |(current, pending): (BiosAttributes, BiosAttributes)| {
                 let drift = compare_bios_profile(
-                    "lenovo-h200",
-                    &profile,
+                    &SelectedBiosProfile {
+                        name: "lenovo-h200",
+                        profile: &profile,
+                        revision: None,
+                    },
                     &attributes(current).into_iter().collect(),
                     &attributes(pending),
                 );

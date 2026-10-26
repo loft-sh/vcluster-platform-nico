@@ -386,6 +386,10 @@ impl InternalRBACRules {
         x.perm("GetMachineBios", vec![ForgeAdminCLI, SiteAgent]);
         x.perm("RefreshMachineBios", vec![ForgeAdminCLI, SiteAgent]);
         x.perm("GetMachineBiosAttributes", vec![ForgeAdminCLI, SiteAgent]);
+        x.perm("ApplyMachineBios", vec![ForgeAdminCLI, SiteAgent]);
+        x.perm("UpsertBiosProfile", vec![ForgeAdminCLI, SiteAgent]);
+        x.perm("DeleteBiosProfile", vec![ForgeAdminCLI, SiteAgent]);
+        x.perm("ListBiosProfiles", vec![ForgeAdminCLI, SiteAgent]);
         x.perm("GetNetworkTopology", vec![ForgeAdminCLI]);
         x.perm("FindNetworkDevicesByDeviceIds", vec![ForgeAdminCLI]);
         x.perm("CreateCredential", vec![ForgeAdminCLI, SiteAgent]);

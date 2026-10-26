@@ -55,6 +55,8 @@ type APIClient struct {
 
 	AuditAPI *AuditAPIService
 
+	BIOSProfileAPI *BIOSProfileAPIService
+
 	BMCCredentialAPI *BMCCredentialAPIService
 
 	CredentialRotationAPI *CredentialRotationAPIService
@@ -164,6 +166,7 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	// API Services
 	c.AllocationAPI = (*AllocationAPIService)(&c.common)
 	c.AuditAPI = (*AuditAPIService)(&c.common)
+	c.BIOSProfileAPI = (*BIOSProfileAPIService)(&c.common)
 	c.BMCCredentialAPI = (*BMCCredentialAPIService)(&c.common)
 	c.CredentialRotationAPI = (*CredentialRotationAPIService)(&c.common)
 	c.DPUExtensionServiceAPI = (*DPUExtensionServiceAPIService)(&c.common)

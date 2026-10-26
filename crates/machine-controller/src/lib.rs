@@ -39,6 +39,7 @@ pub mod handler;
 pub mod health_report;
 pub mod io;
 pub mod metrics;
+pub mod named_bios_profiles;
 pub mod per_object;
 pub mod redfish;
 pub(crate) mod rpc;

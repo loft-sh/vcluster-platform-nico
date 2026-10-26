@@ -35,6 +35,8 @@ type MachineBiosObservation struct {
 	AttributeRegistry NullableString `json:"attributeRegistry"`
 	// Time the BMC reports for its last applied BIOS settings (`@Redfish.Settings.Time`), or null when it reports none
 	SettingsAppliedAt NullableTime `json:"settingsAppliedAt"`
+	// Revision of the stored profile that NICo last found fully applied after a reboot, or null when it has not verified one
+	AppliedRevision NullableString `json:"appliedRevision"`
 	// Every BIOS attribute the BMC reports, with its current value
 	Current map[string]interface{} `json:"current"`
 	// BIOS attribute values that are set but wait for a reboot to apply; empty when nothing is pending
@@ -47,13 +49,14 @@ type _MachineBiosObservation MachineBiosObservation
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewMachineBiosObservation(observedAt time.Time, observedBy string, biosVersion NullableString, attributeRegistry NullableString, settingsAppliedAt NullableTime, current map[string]interface{}, pending map[string]interface{}) *MachineBiosObservation {
+func NewMachineBiosObservation(observedAt time.Time, observedBy string, biosVersion NullableString, attributeRegistry NullableString, settingsAppliedAt NullableTime, appliedRevision NullableString, current map[string]interface{}, pending map[string]interface{}) *MachineBiosObservation {
 	this := MachineBiosObservation{}
 	this.ObservedAt = observedAt
 	this.ObservedBy = observedBy
 	this.BiosVersion = biosVersion
 	this.AttributeRegistry = attributeRegistry
 	this.SettingsAppliedAt = settingsAppliedAt
+	this.AppliedRevision = appliedRevision
 	this.Current = current
 	this.Pending = pending
 	return &this
@@ -193,6 +196,32 @@ func (o *MachineBiosObservation) SetSettingsAppliedAt(v time.Time) {
 	o.SettingsAppliedAt.Set(&v)
 }
 
+// GetAppliedRevision returns the AppliedRevision field value
+// If the value is explicit nil, the zero value for string will be returned
+func (o *MachineBiosObservation) GetAppliedRevision() string {
+	if o == nil || o.AppliedRevision.Get() == nil {
+		var ret string
+		return ret
+	}
+
+	return *o.AppliedRevision.Get()
+}
+
+// GetAppliedRevisionOk returns a tuple with the AppliedRevision field value
+// and a boolean to check if the value has been set.
+// NOTE: If the value is an explicit nil, `nil, true` will be returned
+func (o *MachineBiosObservation) GetAppliedRevisionOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.AppliedRevision.Get(), o.AppliedRevision.IsSet()
+}
+
+// SetAppliedRevision sets field value
+func (o *MachineBiosObservation) SetAppliedRevision(v string) {
+	o.AppliedRevision.Set(&v)
+}
+
 // GetCurrent returns the Current field value
 func (o *MachineBiosObservation) GetCurrent() map[string]interface{} {
 	if o == nil {
@@ -256,6 +285,7 @@ func (o MachineBiosObservation) ToMap() (map[string]interface{}, error) {
 	toSerialize["biosVersion"] = o.BiosVersion.Get()
 	toSerialize["attributeRegistry"] = o.AttributeRegistry.Get()
 	toSerialize["settingsAppliedAt"] = o.SettingsAppliedAt.Get()
+	toSerialize["appliedRevision"] = o.AppliedRevision.Get()
 	toSerialize["current"] = o.Current
 	toSerialize["pending"] = o.Pending
 	return toSerialize, nil
@@ -271,6 +301,7 @@ func (o *MachineBiosObservation) UnmarshalJSON(data []byte) (err error) {
 		"biosVersion",
 		"attributeRegistry",
 		"settingsAppliedAt",
+		"appliedRevision",
 		"current",
 		"pending",
 	}

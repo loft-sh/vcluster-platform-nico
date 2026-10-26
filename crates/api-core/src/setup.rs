@@ -758,6 +758,7 @@ pub async fn start_runtime(runtime_inputs: RuntimeInputs<'_>) -> eyre::Result<So
         secrets_context,
         console_log_source,
         bios_attribute_registries: Default::default(),
+        named_bios_profiles: Default::default(),
         cancel_token: cancel_token.clone(),
     });
 
@@ -1664,6 +1665,7 @@ async fn initialize_and_start_controllers<'a>(
         firmware_object_fetcher,
         dpf_sdk,
         credential_manager,
+        named_bios_profiles,
         ..
     } = api_service.as_ref();
 
@@ -2034,6 +2036,7 @@ async fn initialize_and_start_controllers<'a>(
                 bmc_credential_ops: bmc_credential_ops.clone(),
                 ipmi_tool: ipmi_tool.clone(),
                 site_config: carbide_config.machine_state_handler_site_config().into(),
+                named_bios_profiles: named_bios_profiles.clone(),
                 component_manager: component_manager.clone().map(Arc::new),
                 credential_manager: credential_manager.clone(),
                 bmc_rotation_gate: carbide_credential_rotation::RotationGate::new_for_family(

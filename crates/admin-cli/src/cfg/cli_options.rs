@@ -18,16 +18,17 @@ use clap::{Parser, ValueEnum, ValueHint};
 use rpc::admin_cli::OutputFormat;
 
 use crate::{
-    attestation, backend, bmc_machine, boot_interface, boot_override, browse, component_manager,
-    compute_allocation, credential, devenv, domain, dpa, dpu, dpu_remediation, expected_machines,
-    expected_power_shelf, expected_rack, expected_rack_group, expected_switch, extension_service,
-    firmware, generate_docs, generate_man, generate_shell_complete, host, ib_partition, instance,
-    instance_type, inventory, ip, ipxe_template, jump, machine, machine_interfaces,
-    machine_validation, managed_host, managed_switch, mlx, network_devices, network_security_group,
-    network_segment, nvl_domain, nvl_logical_partition, nvl_partition, nvlink_nmxc_endpoints,
-    operating_system, os_image, ping, power_shelf, rack, redfish, resource_pool, rms, route_server,
-    scout_stream, secrets, set, site_explorer, site_prefix, sku, spx_partition, ssh, switch,
-    tenant, tenant_keyset, tpm_ca, trim_table, version, vpc, vpc_peering, vpc_prefix,
+    attestation, backend, bios_profile, bmc_machine, boot_interface, boot_override, browse,
+    component_manager, compute_allocation, credential, devenv, domain, dpa, dpu, dpu_remediation,
+    expected_machines, expected_power_shelf, expected_rack, expected_rack_group, expected_switch,
+    extension_service, firmware, generate_docs, generate_man, generate_shell_complete, host,
+    ib_partition, instance, instance_type, inventory, ip, ipxe_template, jump, machine,
+    machine_interfaces, machine_validation, managed_host, managed_switch, mlx, network_devices,
+    network_security_group, network_segment, nvl_domain, nvl_logical_partition, nvl_partition,
+    nvlink_nmxc_endpoints, operating_system, os_image, ping, power_shelf, rack, redfish,
+    resource_pool, rms, route_server, scout_stream, secrets, set, site_explorer, site_prefix, sku,
+    spx_partition, ssh, switch, tenant, tenant_keyset, tpm_ca, trim_table, version, vpc,
+    vpc_peering, vpc_prefix,
 };
 
 const MAX_INTERNAL_PAGE_SIZE: usize = 100;
@@ -179,6 +180,8 @@ pub(crate) enum CliCommand {
     Attestation(attestation::Cmd),
     #[clap(about = "NICo backend service operations", subcommand)]
     Backend(backend::Cmd),
+    #[clap(about = "Named BIOS profiles stored in NICo", subcommand)]
+    BiosProfile(bios_profile::Cmd),
     #[clap(
         about = "BMC Machine related handling",
         subcommand,
