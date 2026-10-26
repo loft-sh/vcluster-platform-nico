@@ -222,6 +222,9 @@ const (
 	Forge_SetMachineBootOverride_FullMethodName                             = "/forge.Forge/SetMachineBootOverride"
 	Forge_ClearMachineBootOverride_FullMethodName                           = "/forge.Forge/ClearMachineBootOverride"
 	Forge_GetMachineBootInterfaces_FullMethodName                           = "/forge.Forge/GetMachineBootInterfaces"
+	Forge_GetMachineBios_FullMethodName                                     = "/forge.Forge/GetMachineBios"
+	Forge_RefreshMachineBios_FullMethodName                                 = "/forge.Forge/RefreshMachineBios"
+	Forge_GetMachineBiosAttributes_FullMethodName                           = "/forge.Forge/GetMachineBiosAttributes"
 	Forge_GetNetworkTopology_FullMethodName                                 = "/forge.Forge/GetNetworkTopology"
 	Forge_FindNetworkDevicesByDeviceIds_FullMethodName                      = "/forge.Forge/FindNetworkDevicesByDeviceIds"
 	Forge_CreateCredential_FullMethodName                                   = "/forge.Forge/CreateCredential"
@@ -980,6 +983,9 @@ type ForgeClient interface {
 	// retained post-deletion pairs), plus the effective boot interface the
 	// system would select. Read-only; built for troubleshooting and verification.
 	GetMachineBootInterfaces(ctx context.Context, in *GetMachineBootInterfacesRequest, opts ...grpc.CallOption) (*GetMachineBootInterfacesResponse, error)
+	GetMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBios, error)
+	RefreshMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBios, error)
+	GetMachineBiosAttributes(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBiosAttributes, error)
 	// Get Network topology
 	GetNetworkTopology(ctx context.Context, in *NetworkTopologyRequest, opts ...grpc.CallOption) (*NetworkTopologyData, error)
 	FindNetworkDevicesByDeviceIds(ctx context.Context, in *NetworkDeviceIdList, opts ...grpc.CallOption) (*NetworkTopologyData, error)
@@ -3630,6 +3636,36 @@ func (c *forgeClient) GetMachineBootInterfaces(ctx context.Context, in *GetMachi
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMachineBootInterfacesResponse)
 	err := c.cc.Invoke(ctx, Forge_GetMachineBootInterfaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) GetMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBios, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MachineBios)
+	err := c.cc.Invoke(ctx, Forge_GetMachineBios_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) RefreshMachineBios(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBios, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MachineBios)
+	err := c.cc.Invoke(ctx, Forge_RefreshMachineBios_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *forgeClient) GetMachineBiosAttributes(ctx context.Context, in *MachineId, opts ...grpc.CallOption) (*MachineBiosAttributes, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MachineBiosAttributes)
+	err := c.cc.Invoke(ctx, Forge_GetMachineBiosAttributes_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -7482,6 +7518,9 @@ type ForgeServer interface {
 	// retained post-deletion pairs), plus the effective boot interface the
 	// system would select. Read-only; built for troubleshooting and verification.
 	GetMachineBootInterfaces(context.Context, *GetMachineBootInterfacesRequest) (*GetMachineBootInterfacesResponse, error)
+	GetMachineBios(context.Context, *MachineId) (*MachineBios, error)
+	RefreshMachineBios(context.Context, *MachineId) (*MachineBios, error)
+	GetMachineBiosAttributes(context.Context, *MachineId) (*MachineBiosAttributes, error)
 	// Get Network topology
 	GetNetworkTopology(context.Context, *NetworkTopologyRequest) (*NetworkTopologyData, error)
 	FindNetworkDevicesByDeviceIds(context.Context, *NetworkDeviceIdList) (*NetworkTopologyData, error)
@@ -8727,6 +8766,15 @@ func (UnimplementedForgeServer) ClearMachineBootOverride(context.Context, *Machi
 }
 func (UnimplementedForgeServer) GetMachineBootInterfaces(context.Context, *GetMachineBootInterfacesRequest) (*GetMachineBootInterfacesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMachineBootInterfaces not implemented")
+}
+func (UnimplementedForgeServer) GetMachineBios(context.Context, *MachineId) (*MachineBios, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMachineBios not implemented")
+}
+func (UnimplementedForgeServer) RefreshMachineBios(context.Context, *MachineId) (*MachineBios, error) {
+	return nil, status.Error(codes.Unimplemented, "method RefreshMachineBios not implemented")
+}
+func (UnimplementedForgeServer) GetMachineBiosAttributes(context.Context, *MachineId) (*MachineBiosAttributes, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMachineBiosAttributes not implemented")
 }
 func (UnimplementedForgeServer) GetNetworkTopology(context.Context, *NetworkTopologyRequest) (*NetworkTopologyData, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetNetworkTopology not implemented")
@@ -13348,6 +13396,60 @@ func _Forge_GetMachineBootInterfaces_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ForgeServer).GetMachineBootInterfaces(ctx, req.(*GetMachineBootInterfacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_GetMachineBios_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MachineId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).GetMachineBios(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_GetMachineBios_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).GetMachineBios(ctx, req.(*MachineId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_RefreshMachineBios_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MachineId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).RefreshMachineBios(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_RefreshMachineBios_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).RefreshMachineBios(ctx, req.(*MachineId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Forge_GetMachineBiosAttributes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MachineId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ForgeServer).GetMachineBiosAttributes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Forge_GetMachineBiosAttributes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ForgeServer).GetMachineBiosAttributes(ctx, req.(*MachineId))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -20313,6 +20415,18 @@ var Forge_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMachineBootInterfaces",
 			Handler:    _Forge_GetMachineBootInterfaces_Handler,
+		},
+		{
+			MethodName: "GetMachineBios",
+			Handler:    _Forge_GetMachineBios_Handler,
+		},
+		{
+			MethodName: "RefreshMachineBios",
+			Handler:    _Forge_RefreshMachineBios_Handler,
+		},
+		{
+			MethodName: "GetMachineBiosAttributes",
+			Handler:    _Forge_GetMachineBiosAttributes_Handler,
 		},
 		{
 			MethodName: "GetNetworkTopology",

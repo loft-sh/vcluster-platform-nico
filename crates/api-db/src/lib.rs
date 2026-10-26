@@ -60,6 +60,7 @@ pub mod instance_network_config;
 pub mod instance_type;
 pub mod ip_allocator;
 pub mod machine;
+pub mod machine_bios_observation;
 pub mod machine_boot_override;
 pub mod machine_desired_boot_interface;
 pub mod machine_interface;

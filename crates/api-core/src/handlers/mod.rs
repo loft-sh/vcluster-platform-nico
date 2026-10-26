@@ -56,6 +56,7 @@ pub(super) mod instance_type;
 pub(super) mod lldp;
 pub(super) mod logical_partition;
 pub(super) mod machine;
+pub(super) mod machine_bios;
 pub(super) mod machine_boot_interfaces;
 pub(super) mod machine_discovery;
 pub(super) mod machine_hardware_info;

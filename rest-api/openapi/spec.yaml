@@ -12139,6 +12139,187 @@ paths:
         attached to the Machine, `acknowledgeAttachedInstance` must be `true`.
         
         Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
+  '/v2/org/{org}/nico/machine/{machineId}/bios':
+    parameters:
+      - schema:
+          type: string
+        name: org
+        in: path
+        required: true
+        description: Name of the Org
+      - schema:
+          type: string
+        name: machineId
+        in: path
+        required: true
+        description: ID of the Machine
+    get:
+      summary: Retrieve Machine BIOS
+      tags:
+        - Machine
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineBios'
+              examples:
+                example-1:
+                  value:
+                    machineId: fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
+                    profile:
+                      name: lenovo-h200
+                      attributes:
+                        OperatingModes_ChooseOperatingMode: MaximumPerformance
+                    observation:
+                      observedAt: '2026-10-25T23:52:15Z'
+                      observedBy: refresh
+                      biosVersion: R3X318M
+                      attributeRegistry: BiosAttributeRegistry.1.0.0
+                      settingsAppliedAt: null
+                      current:
+                        OperatingModes_ChooseOperatingMode: CustomMode
+                        SystemRecovery_POSTWatchdogTimerValue: 5
+                      pending: {}
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: get-machine-bios
+      description: |-
+        Retrieve the BIOS settings NICo last read from the Machine's BMC, together with the
+        `bios-profile` NICo applies to the Machine. Core records an observation when its
+        lifecycle BIOS profile check or its post-reboot verification reads the BIOS of a
+        Machine whose `bios-profile` applies, and on every refresh. This call reads only
+        stored state and never contacts the BMC. `observation` is null until the BIOS has
+        been read once. NICo does not compare `current` with `profile`.
+
+        Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
+  '/v2/org/{org}/nico/machine/{machineId}/bios/refresh':
+    parameters:
+      - schema:
+          type: string
+        name: org
+        in: path
+        required: true
+        description: Name of the Org
+      - schema:
+          type: string
+        name: machineId
+        in: path
+        required: true
+        description: ID of the Machine
+    post:
+      summary: Refresh Machine BIOS
+      tags:
+        - Machine
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineBios'
+              examples:
+                example-1:
+                  value:
+                    machineId: fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
+                    profile:
+                      name: lenovo-h200
+                      attributes:
+                        OperatingModes_ChooseOperatingMode: MaximumPerformance
+                    observation:
+                      observedAt: '2026-10-25T23:52:15Z'
+                      observedBy: refresh
+                      biosVersion: R3X318M
+                      attributeRegistry: BiosAttributeRegistry.1.0.0
+                      settingsAppliedAt: null
+                      current:
+                        OperatingModes_ChooseOperatingMode: CustomMode
+                        SystemRecovery_POSTWatchdogTimerValue: 5
+                      pending: {}
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: refresh-machine-bios
+      description: |-
+        Read the BIOS settings from the Machine's BMC now, store them as the Machine's BIOS
+        observation with `observedBy` set to `refresh`, and return them. When the stored
+        observation is a refresh younger than 60 seconds, it is returned without contacting
+        the BMC. Core bounds the BMC read at 30 seconds.
+
+        Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
+  '/v2/org/{org}/nico/machine/{machineId}/bios/attributes':
+    parameters:
+      - schema:
+          type: string
+        name: org
+        in: path
+        required: true
+        description: Name of the Org
+      - schema:
+          type: string
+        name: machineId
+        in: path
+        required: true
+        description: ID of the Machine
+    get:
+      summary: Retrieve Machine BIOS attributes
+      tags:
+        - Machine
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MachineBiosAttributes'
+              examples:
+                example-1:
+                  value:
+                    registry: BiosAttributeRegistry.1.0.0
+                    attributes:
+                      - name: SystemRecovery_POSTWatchdogTimerValue
+                        displayName: POST Watchdog Timer Value
+                        type: Integer
+                        readOnly: false
+                        allowedValues: []
+                        lowerBound: 5
+                        upperBound: 20
+                        helpText: Enter POST loader Watchdog timer value in minutes from the specified range(5-20).
+                        defaultValue: '5'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/GenericHttpError'
+        '504':
+          $ref: '#/components/responses/GatewayTimeoutError'
+      operationId: get-machine-bios-attributes
+      description: |-
+        List every BIOS attribute in the Redfish attribute registry that the Machine's BMC
+        names in its `Bios` resource, in registry order. Core reads the `Bios` resource from
+        the BMC on every call and caches the parsed registry per vendor, model, BIOS version,
+        and registry ID.
+
+        Org must have an Infrastructure Provider entity and own the Site that the Machine belongs to. User must have authorization role with `PROVIDER_ADMIN` suffix.
   '/v2/org/{org}/nico/machine/{machineId}/decommission':
     parameters:
       - schema:
@@ -19797,6 +19978,164 @@ components:
       examples:
         - action: ForceRestart
           acknowledgeAttachedInstance: true
+    MachineBios:
+      type: object
+      title: MachineBios
+      description: BIOS settings NICo observed on a Machine and the bios-profile NICo applies to it
+      required:
+        - machineId
+        - profile
+        - observation
+      properties:
+        machineId:
+          type: string
+          description: ID of the Machine
+        profile:
+          oneOf:
+            - $ref: '#/components/schemas/MachineBiosProfile'
+            - type: 'null'
+          description: |-
+            The named BIOS profile NICo applies to the Machine. Null when the Machine has no
+            `bios-profile` label, the label names a profile that is not configured, or the
+            profile's vendor or model does not match the Machine's BMC.
+        observation:
+          oneOf:
+            - $ref: '#/components/schemas/MachineBiosObservation'
+            - type: 'null'
+          description: The last BIOS read NICo stored for the Machine. Null until the BIOS has been read once.
+    MachineBiosProfile:
+      type: object
+      title: MachineBiosProfile
+      description: A named BIOS profile from the site configuration
+      required:
+        - name
+        - attributes
+      properties:
+        name:
+          type: string
+          description: Name of the profile, as given by the Machine's `bios-profile` label
+        attributes:
+          type: object
+          additionalProperties: true
+          description: BIOS attribute names and the values the profile sets
+    MachineBiosObservation:
+      type: object
+      title: MachineBiosObservation
+      description: One read of a Machine's BIOS settings from its BMC
+      required:
+        - observedAt
+        - observedBy
+        - biosVersion
+        - attributeRegistry
+        - settingsAppliedAt
+        - current
+        - pending
+      properties:
+        observedAt:
+          type: string
+          format: date-time
+          description: Time when NICo read the BIOS
+        observedBy:
+          type: string
+          enum:
+            - lifecycle_gate
+            - post_reboot
+            - refresh
+          description: |-
+            What read the BIOS: `lifecycle_gate` for the BIOS profile check that runs at
+            lifecycle steps, `post_reboot` for the verification after a BIOS change and reboot,
+            `refresh` for a refresh request
+        biosVersion:
+          type:
+            - string
+            - 'null'
+          description: BIOS version the Machine reported during discovery, or null when unknown
+        attributeRegistry:
+          type:
+            - string
+            - 'null'
+          description: ID of the Redfish attribute registry the BMC names for its BIOS attributes, or null when the BMC names none
+        settingsAppliedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: Time the BMC reports for its last applied BIOS settings (`@Redfish.Settings.Time`), or null when it reports none
+        current:
+          type: object
+          additionalProperties: true
+          description: Every BIOS attribute the BMC reports, with its current value
+        pending:
+          type: object
+          additionalProperties: true
+          description: BIOS attribute values that are set but wait for a reboot to apply; empty when nothing is pending
+    MachineBiosAttributes:
+      type: object
+      title: MachineBiosAttributes
+      description: BIOS attributes from the Redfish attribute registry of a Machine's BMC
+      required:
+        - registry
+        - attributes
+      properties:
+        registry:
+          type: string
+          description: ID of the attribute registry
+        attributes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MachineBiosAttribute'
+    MachineBiosAttribute:
+      type: object
+      title: MachineBiosAttribute
+      description: One BIOS attribute as the Redfish attribute registry defines it
+      required:
+        - name
+        - displayName
+        - type
+        - readOnly
+        - allowedValues
+        - lowerBound
+        - upperBound
+        - helpText
+        - defaultValue
+      properties:
+        name:
+          type: string
+          description: Attribute name, as used in `current` and `pending`
+        displayName:
+          type: string
+          description: Human-readable name, or empty when the registry gives none
+        type:
+          type: string
+          description: Redfish attribute type, such as `Enumeration`, `Integer`, `String`, or `Boolean`
+        readOnly:
+          type: boolean
+          description: Whether the attribute cannot be changed
+        allowedValues:
+          type: array
+          items:
+            type: string
+          description: Allowed values of an `Enumeration` attribute; empty for other types
+        lowerBound:
+          type:
+            - number
+            - 'null'
+          description: Lowest allowed value of an `Integer` attribute, or null when the registry gives none
+        upperBound:
+          type:
+            - number
+            - 'null'
+          description: Highest allowed value of an `Integer` attribute, or null when the registry gives none
+        helpText:
+          type:
+            - string
+            - 'null'
+          description: Help text from the registry, or null when it gives none
+        defaultValue:
+          type:
+            - string
+            - 'null'
+          description: Default value rendered as text, or null when the registry gives none
     MachineValidationRunCreateRequest:
       type: object
       title: MachineValidationRunCreateRequest

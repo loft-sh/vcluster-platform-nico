@@ -1,0 +1,150 @@
+{
+  "@odata.context": "/redfish/v1/$metadata#AttributeRegistry.AttributeRegistry",
+  "@odata.type": "#AttributeRegistry.v1_3_8.AttributeRegistry",
+  "Id": "BiosAttributeRegistry.1.0.0",
+  "Language": "en",
+  "Name": "Bios Attribute Registry Version 1",
+  "OwningEntity": "Lenovo",
+  "RegistryEntries": {
+    "Attributes": [
+      {
+        "AttributeName": "OperatingModes_ChooseOperatingMode",
+        "CurrentValue": null,
+        "DefaultValue": "Efficiency_FavorPerformance",
+        "DisplayName": "Choose Operating Mode",
+        "DisplayOrder": 132,
+        "GrayOut": false,
+        "HelpText": "Select the operating mode based on your preference. Power savings and performance are also highly dependent on hardware and software running on the system. The selected operating mode will automatically change low-level settings per the mode selected and will not allow them to be changed individually. Switch to \"Custom\" to set low level settings individually. \"Efficiency \u2013 Favor Performance\" default operating mode is comparable to Intel's Optimized Power Mode (OPM). Note, for maximum performance on applications that don't utilize all CPU cores, it is best to select \"Maximum Performance\" first, then select \"Custom\" and enable C-states. Doing so will allow the active cores to achieve maximum turbo uplift. Alternatively, unused cores can be disabled under \"System Settings\" => \"Processor\" =>\"Cores in CPU Package\".",
+        "Hidden": false,
+        "MenuPath": "./OperatingModes/OperatingModes_OperatingModes",
+        "ReadOnly": false,
+        "ResetRequired": true,
+        "Type": "Enumeration",
+        "Value": [
+          {
+            "ValueDisplayName": "Minimal Power",
+            "ValueName": "MinimalPower"
+          },
+          {
+            "ValueDisplayName": "Efficiency - Favor Power",
+            "ValueName": "Efficiency_FavorPower"
+          },
+          {
+            "ValueDisplayName": "Efficiency - Favor Performance",
+            "ValueName": "Efficiency_FavorPerformance"
+          },
+          {
+            "ValueDisplayName": "Custom Mode",
+            "ValueName": "CustomMode"
+          },
+          {
+            "ValueDisplayName": "Maximum Performance",
+            "ValueName": "MaximumPerformance"
+          }
+        ],
+        "WarningText": "Choose Operating Mode changes require a system reboot to take effect.",
+        "WriteOnly": false
+      },
+      {
+        "AttributeName": "DevicesandIOPorts_IntelVTforDirectedIOVTd",
+        "CurrentValue": null,
+        "DefaultValue": "Enabled",
+        "DisplayName": "Intel\u00ae VT for Directed I/O (VT-d)",
+        "DisplayOrder": 10,
+        "GrayOut": false,
+        "HelpText": "Enable/Disable Intel\u00ae Virtualization Technology for Directed I/O (VT-d) by reporting the I/O device assignment to VMM through DMAR ACPI Tables.  Note, this feature is not allowed to be disabled if total CPU thread counts over 255 on system.",
+        "Hidden": false,
+        "MenuPath": "./DevicesandIOPorts/DevicesandIOPorts_DevicesandIOPorts",
+        "ReadOnly": false,
+        "ResetRequired": true,
+        "Type": "Enumeration",
+        "Value": [
+          {
+            "ValueDisplayName": "Disabled",
+            "ValueName": "Disabled"
+          },
+          {
+            "ValueDisplayName": "Enabled",
+            "ValueName": "Enabled"
+          }
+        ],
+        "WarningText": "Intel\u00ae VT for Directed I/O (VT-d) changes require a system reboot to take effect.",
+        "WriteOnly": false
+      },
+      {
+        "AttributeName": "SystemRecovery_POSTWatchdogTimer",
+        "CurrentValue": null,
+        "DefaultValue": "Disabled",
+        "DisplayName": "POST Watchdog Timer",
+        "DisplayOrder": 1,
+        "GrayOut": false,
+        "HelpText": "Enable/Disable POST Watchdog Timer.",
+        "Hidden": false,
+        "MenuPath": "./SystemRecovery/SystemRecovery_SystemRecovery",
+        "ReadOnly": false,
+        "ResetRequired": true,
+        "Type": "Enumeration",
+        "Value": [
+          {
+            "ValueDisplayName": "Disabled",
+            "ValueName": "Disabled"
+          },
+          {
+            "ValueDisplayName": "Enabled",
+            "ValueName": "Enabled"
+          }
+        ],
+        "WarningText": "POST Watchdog Timer changes require a system reboot to take effect.",
+        "WriteOnly": false
+      },
+      {
+        "AttributeName": "SystemRecovery_POSTWatchdogTimerValue",
+        "CurrentValue": null,
+        "DefaultValue": "5",
+        "DisplayName": "POST Watchdog Timer Value",
+        "DisplayOrder": 2,
+        "GrayOut": false,
+        "HelpText": "Enter POST loader Watchdog timer value in minutes from the specified range(5-20).",
+        "Hidden": false,
+        "LowerBound": 5,
+        "MenuPath": "./SystemRecovery/SystemRecovery_SystemRecovery",
+        "ReadOnly": false,
+        "ResetRequired": true,
+        "ScalarIncrement": 1,
+        "Type": "Integer",
+        "UpperBound": 20,
+        "WarningText": "POST Watchdog Timer Value changes require a system reboot to take effect.",
+        "WriteOnly": false
+      },
+      {
+        "AttributeName": "TrustedComputingGroup_DeviceStatus",
+        "CurrentValue": null,
+        "DefaultValue": null,
+        "DisplayName": "Device Status",
+        "DisplayOrder": 106,
+        "GrayOut": false,
+        "HelpText": "Display the Device Status",
+        "Hidden": false,
+        "MaxLength": 255,
+        "MenuPath": "./TrustedComputingGroup/TrustedComputingGroup_TrustedPlatformModuleTPM20",
+        "MinLength": 3,
+        "ReadOnly": true,
+        "ResetRequired": true,
+        "Type": "String",
+        "ValueExpression": null,
+        "WarningText": "Device Status changes require a system reboot to take effect.",
+        "WriteOnly": false
+      }
+    ],
+    "Dependencies": [],
+    "Menus": []
+  },
+  "RegistryVersion": "1.0.0",
+  "SupportedSystems": [
+    {
+      "FirmwareVersion": "R3X318M",
+      "ProductName": "ThinkSystem SR680a V3",
+      "SystemId": "7DHECTO1WW"
+    }
+  ]
+}
