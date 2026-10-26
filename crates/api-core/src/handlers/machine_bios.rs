@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use ::rpc::forge as rpc;
@@ -24,6 +24,7 @@ use carbide_machine_controller::handler::{
     BIOS_PROFILE_DRIFT_HEALTH_SOURCE, bios_apply_refusal, named_bios_profile_for_explored_host,
 };
 use carbide_machine_controller::named_bios_profiles::StoredBiosProfile;
+use carbide_redfish::libredfish::RedfishClientPool;
 use carbide_utils::redfish::BmcAccessInfo;
 use carbide_uuid::machine::{HostMachineId, MachineId};
 use chrono::{TimeDelta, Utc};
@@ -43,7 +44,39 @@ use crate::api::{Api, log_request_data};
 use crate::handlers::utils::convert_and_log_machine_id;
 
 const REFRESH_REUSE_SECONDS: i64 = 60;
-const BMC_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const BMC_READ_TIMEOUT: Duration = Duration::from_secs(240);
+
+static BIOS_REFRESHES_IN_FLIGHT: LazyLock<Mutex<HashSet<MachineId>>> =
+    LazyLock::new(Default::default);
+static BIOS_REGISTRY_READS_IN_FLIGHT: LazyLock<Mutex<HashSet<MachineId>>> =
+    LazyLock::new(Default::default);
+
+struct InFlight {
+    reads: &'static LazyLock<Mutex<HashSet<MachineId>>>,
+    machine_id: MachineId,
+}
+
+impl InFlight {
+    fn start(
+        reads: &'static LazyLock<Mutex<HashSet<MachineId>>>,
+        machine_id: MachineId,
+    ) -> Option<Self> {
+        let started = reads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(machine_id);
+        started.then(|| Self { reads, machine_id })
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.reads
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&self.machine_id);
+    }
+}
 const MAINTENANCE_HEALTH_SOURCE: &str = "maintenance";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -69,9 +102,9 @@ impl RegistryCacheKey {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct BiosAttributeRegistryCache(
-    Mutex<HashMap<RegistryCacheKey, rpc::MachineBiosAttributes>>,
+    Arc<Mutex<HashMap<RegistryCacheKey, rpc::MachineBiosAttributes>>>,
 );
 
 impl BiosAttributeRegistryCache {
@@ -131,15 +164,9 @@ pub(crate) async fn refresh_machine_bios(
             Some(recent.clone()),
         )));
     }
-    let applied_revision = stored.and_then(|observation| observation.applied_revision);
     let bmc_access_info = bmc_access_info(&mut txn, &machine).await?;
     txn.commit().await?;
 
-    let (bios, pending) = with_bmc_deadline(async {
-        let redfish = connect(api, &bmc_access_info, machine_id).await?;
-        Ok::<_, CarbideError>((redfish.bios().await?, redfish.pending().await?))
-    })
-    .await?;
     let bios_version = machine
         .status
         .hardware_info
@@ -147,7 +174,44 @@ pub(crate) async fn refresh_machine_bios(
         .and_then(|info| info.dmi_data.as_ref())
         .map(|dmi| dmi.bios_version.clone())
         .filter(|version| !version.is_empty());
-    let mut observation = MachineBiosObservation::from_bios_resource(
+    if let Some(in_flight) = InFlight::start(&BIOS_REFRESHES_IN_FLIGHT, machine_id) {
+        let pool = api.database_connection.clone();
+        let redfish_pool = api.redfish_pool.clone();
+        tokio::spawn(async move {
+            let _in_flight = in_flight;
+            match refresh_in_background(
+                &pool,
+                redfish_pool.as_ref(),
+                &bmc_access_info,
+                machine_id,
+                bios_version,
+            )
+            .await
+            {
+                Ok(()) => tracing::info!(%machine_id, "Refreshed the host BIOS observation"),
+                Err(error) => {
+                    tracing::warn!(%machine_id, %error, "Could not refresh the host BIOS observation")
+                }
+            }
+        });
+    }
+
+    Ok(Response::new(machine_bios(machine_id, profile, stored)))
+}
+
+async fn refresh_in_background(
+    pool: &sqlx::PgPool,
+    redfish_pool: &dyn RedfishClientPool,
+    bmc_access_info: &BmcAccessInfo,
+    machine_id: MachineId,
+    bios_version: Option<String>,
+) -> Result<(), CarbideError> {
+    let (bios, pending) = with_bmc_deadline(async {
+        let redfish = connect(redfish_pool, bmc_access_info, machine_id).await?;
+        Ok::<_, CarbideError>((redfish.bios().await?, redfish.pending().await?))
+    })
+    .await?;
+    let observation = MachineBiosObservation::from_bios_resource(
         machine_id,
         BiosObservationSource::Refresh,
         Utc::now(),
@@ -160,17 +224,11 @@ pub(crate) async fn refresh_machine_bios(
             "the BMC of machine {machine_id} returned a Bios resource without an Attributes object"
         ))
     })?;
-    observation.applied_revision = applied_revision;
 
-    let mut txn = api.txn_begin().await?;
+    let mut txn = db::Transaction::begin(pool).await?;
     db::machine_bios_observation::upsert(&mut txn, &observation).await?;
     txn.commit().await?;
-
-    Ok(Response::new(machine_bios(
-        machine_id,
-        profile,
-        Some(observation),
-    )))
+    Ok(())
 }
 
 pub(crate) async fn get_machine_bios_attributes(
@@ -181,37 +239,64 @@ pub(crate) async fn get_machine_bios_attributes(
     let machine_id: MachineId = convert_and_log_machine_id(Some(request.get_ref()))?;
 
     let (machine, mut txn) = api.load_machine(&machine_id, Default::default()).await?;
+    let known_registry = db::machine_bios_observation::find_by_machine_id(&mut txn, &machine_id)
+        .await?
+        .and_then(|observation| observation.attribute_registry);
     let bmc_access_info = bmc_access_info(&mut txn, &machine).await?;
     txn.commit().await?;
 
-    let attributes = with_bmc_deadline(async {
-        let redfish = connect(api, &bmc_access_info, machine_id).await?;
-        let bios = redfish.bios().await?;
-        let registry = bios
-            .get("AttributeRegistry")
-            .and_then(Value::as_str)
-            .ok_or_else(|| {
-                CarbideError::internal(format!(
-                    "the BMC of machine {machine_id} does not name a BIOS attribute registry"
-                ))
-            })?;
-        let key = RegistryCacheKey::for_machine(&machine, registry);
-        if let Some(cached) = key
-            .as_ref()
-            .and_then(|key| api.bios_attribute_registries.get(key))
-        {
-            return Ok::<_, CarbideError>(cached);
-        }
-        let attributes = read_bios_attribute_registry(redfish.as_ref(), registry).await?;
-        if let Some(key) = key {
-            api.bios_attribute_registries
-                .insert(key, attributes.clone());
-        }
-        Ok::<_, CarbideError>(attributes)
-    })
-    .await?;
+    if let Some(cached) = known_registry
+        .as_deref()
+        .and_then(|registry| RegistryCacheKey::for_machine(&machine, registry))
+        .and_then(|key| api.bios_attribute_registries.get(&key))
+    {
+        return Ok(Response::new(cached));
+    }
 
-    Ok(Response::new(attributes))
+    if let Some(in_flight) = InFlight::start(&BIOS_REGISTRY_READS_IN_FLIGHT, machine_id) {
+        let redfish_pool = api.redfish_pool.clone();
+        let cache = api.bios_attribute_registries.clone();
+        let key_machine = machine.clone();
+        tokio::spawn(async move {
+            let _in_flight = in_flight;
+            let read = with_bmc_deadline(async {
+                let redfish = connect(redfish_pool.as_ref(), &bmc_access_info, machine_id).await?;
+                let registry = match known_registry {
+                    Some(registry) => registry,
+                    None => redfish
+                        .bios()
+                        .await?
+                        .get("AttributeRegistry")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .ok_or_else(|| {
+                            CarbideError::internal(format!(
+                                "the BMC of machine {machine_id} does not name a BIOS attribute registry"
+                            ))
+                        })?,
+                };
+                let attributes = read_bios_attribute_registry(redfish.as_ref(), &registry).await?;
+                Ok::<_, CarbideError>((registry, attributes))
+            })
+            .await;
+            match read {
+                Ok((registry, attributes)) => {
+                    if let Some(key) = RegistryCacheKey::for_machine(&key_machine, &registry) {
+                        cache.insert(key, attributes);
+                    }
+                    tracing::info!(%machine_id, %registry, "Read the host BIOS attribute registry");
+                }
+                Err(error) => {
+                    tracing::warn!(%machine_id, %error, "Could not read the host BIOS attribute registry")
+                }
+            }
+        });
+    }
+
+    Err(CarbideError::UnavailableError(format!(
+        "the BIOS attribute registry of machine {machine_id} is being read from its BMC; retry in a minute"
+    ))
+    .into())
 }
 
 pub(crate) async fn apply_machine_bios(
@@ -366,11 +451,11 @@ async fn bmc_access_info(
 }
 
 async fn connect(
-    api: &Api,
+    redfish_pool: &dyn RedfishClientPool,
     bmc_access_info: &BmcAccessInfo,
     machine_id: MachineId,
 ) -> Result<Box<dyn Redfish>, CarbideError> {
-    api.redfish_pool
+    redfish_pool
         .client_by_info(bmc_access_info)
         .await
         .map_err(|inner| CarbideError::RedfishClientCreation {
@@ -425,5 +510,33 @@ fn machine_bios(
         machine_id: Some(machine_id),
         profile,
         observation: observation.map(Into::into),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    static READS: LazyLock<Mutex<HashSet<MachineId>>> = LazyLock::new(Default::default);
+
+    fn in_flight() -> HashSet<MachineId> {
+        READS.lock().unwrap().clone()
+    }
+
+    #[test]
+    fn a_second_read_of_a_machine_in_flight_neither_blocks_nor_ends_the_first() {
+        let machine_id =
+            MachineId::from_str("fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg")
+                .unwrap();
+
+        let first = InFlight::start(&READS, machine_id).expect("no read is in flight yet");
+        assert!(InFlight::start(&READS, machine_id).is_none());
+        assert_eq!(in_flight(), HashSet::from([machine_id]));
+
+        drop(first);
+        assert!(in_flight().is_empty());
+        assert!(InFlight::start(&READS, machine_id).is_some());
     }
 }
