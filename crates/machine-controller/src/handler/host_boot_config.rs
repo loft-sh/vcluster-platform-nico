@@ -496,6 +496,8 @@ mod tests {
     use carbide_test_support::{Case, check_cases_async, value_scenarios};
     use libredfish::BiosProfileType;
     use libredfish::model::service_root::RedfishVendor;
+    use libredfish::model::{BootProgress, BootProgressTypes};
+    use model::machine::MachineLastRebootRequested;
     use model::machine_boot_interface::MachineBootInterface;
     use model::test_support::machine_snapshot::managed_host_state_snapshot;
     use state_controller::db_write_batch::DbWriteBatch;
@@ -514,6 +516,7 @@ mod tests {
             scout_reporting_timeout: chrono::Duration::zero(),
             waiting_for_measurements_timeout: chrono::Duration::zero(),
             uefi_boot_wait: chrono::Duration::zero(),
+            dpu_first_restart_delay: None,
         }
     }
 
@@ -703,6 +706,75 @@ mod tests {
                 "boot-config target drifted at Redfish call {call_index}",
             );
         }
+    }
+
+    #[tokio::test]
+    async fn polling_bios_setup_finishes_only_after_the_host_has_booted_since_the_reboot() {
+        let redfish_sim = Arc::new(RedfishSim::default());
+        let redfish_client = redfish_sim
+            .create_client("bios-apply-settle", None, RedfishAuth::Anonymous, None)
+            .await
+            .unwrap();
+        let mut services = test_services(
+            redfish_sim.clone(),
+            MachineStateHandlerSiteConfig::test_default(),
+        );
+        let mut metrics = MachineMetrics::default();
+        let mut pending_db_writes = DbWriteBatch::new();
+        let mut ctx = StateHandlerContext {
+            services: &mut services,
+            metrics: &mut metrics,
+            pending_db_writes: &mut pending_db_writes,
+        };
+        let mut mh_snapshot = managed_host_state_snapshot();
+        mh_snapshot.host_snapshot.status.last_reboot_requested = Some(MachineLastRebootRequested {
+            time: chrono::Utc::now(),
+            ..MachineLastRebootRequested::default()
+        });
+        let explicit_target = BootInterfaceTarget::Pair(MachineBootInterface {
+            mac_address: "10:00:00:00:00:01".parse().unwrap(),
+            interface_id: "NIC.Slot.5-1".to_string(),
+        });
+        let boot_progress = |last_state| BootProgress {
+            last_state: Some(last_state),
+            last_state_time: None,
+            oem_last_state: None,
+        };
+
+        let mut outcomes = Vec::new();
+        for reported in [
+            Some(boot_progress(
+                BootProgressTypes::MemoryInitializationStarted,
+            )),
+            Some(boot_progress(BootProgressTypes::None)),
+            Some(boot_progress(BootProgressTypes::OSBootStarted)),
+            None,
+        ] {
+            redfish_sim.set_boot_progress(reported);
+            outcomes.push(
+                match run_host_boot_config_stage(
+                    &mut ctx,
+                    &reachability_params(),
+                    redfish_client.as_ref(),
+                    &mh_snapshot,
+                    Some(&explicit_target),
+                    HostBootConfigStage::PollingBiosSetup { retry_count: 0 },
+                )
+                .await
+                .unwrap()
+                {
+                    HostBootConfigOutcome::Wait(_) => "wait",
+                    HostBootConfigOutcome::Continue(HostBootConfigStage::SetBootOrder {
+                        ..
+                    }) => "set boot order",
+                    outcome => panic!("unexpected outcome {outcome:?}"),
+                },
+            );
+        }
+        assert_eq!(
+            outcomes,
+            vec!["wait", "wait", "set boot order", "set boot order"]
+        );
     }
 
     #[tokio::test]
