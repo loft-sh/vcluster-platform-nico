@@ -6161,6 +6161,8 @@ path = "credentials.yaml"
             boot_interface_observation_interval: Duration::hours(2),
             full_lockdown_recovery_enabled: true,
             bios_profile_persistent_drift_prevents_allocation: false,
+            bios_apply_settle_timeout: Duration::minutes(25),
+            dpu_first_restart_delay: Some(Duration::minutes(15)),
         };
 
         let config_str = serde_json::to_string(&input).unwrap();
@@ -6182,6 +6184,7 @@ path = "credentials.yaml"
         let config = r#"{"dpu_wait_time": "20m","power_down_wait":"10s",
         "failure_retry_time":"1h30m", "dpu_up_threshold": "1w",
         "boot_interface_observation_interval": "2h",
+        "bios_apply_settle_timeout": "25m", "dpu_first_restart_delay": "15m",
         "controller": {"iteration_time": "33s", "max_object_handling_time": "63s", "max_concurrency": 13}}"#;
         let config: MachineStateControllerConfig = serde_json::from_str(config).unwrap();
 
@@ -6211,6 +6214,8 @@ path = "credentials.yaml"
                 boot_interface_observation_interval: Duration::hours(2),
                 full_lockdown_recovery_enabled: false,
                 bios_profile_persistent_drift_prevents_allocation: false,
+                bios_apply_settle_timeout: Duration::minutes(25),
+                dpu_first_restart_delay: Some(Duration::minutes(15)),
             }
         );
     }
@@ -6237,6 +6242,8 @@ path = "credentials.yaml"
                 boot_interface_observation_interval: Duration::minutes(10),
                 full_lockdown_recovery_enabled: false,
                 bios_profile_persistent_drift_prevents_allocation: false,
+                bios_apply_settle_timeout: Duration::minutes(20),
+                dpu_first_restart_delay: None,
             }
         );
     }
@@ -6260,6 +6267,19 @@ path = "credentials.yaml"
                 serde_json::from_str::<MachineStateControllerConfig>(&config_json).is_err(),
                 "boot_interface_observation_interval={invalid_interval} must be rejected",
             );
+        }
+    }
+
+    #[test]
+    fn reject_nonpositive_bios_apply_settle_and_dpu_first_restart_delays() {
+        for field in ["bios_apply_settle_timeout", "dpu_first_restart_delay"] {
+            for invalid_duration in ["0s", "-1s"] {
+                let config_json = format!(r#"{{"{field}": "{invalid_duration}"}}"#);
+                assert!(
+                    serde_json::from_str::<MachineStateControllerConfig>(&config_json).is_err(),
+                    "{field}={invalid_duration} must be rejected",
+                );
+            }
         }
     }
 

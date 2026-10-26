@@ -16,10 +16,29 @@
  */
 
 use carbide_state_controller_common::config::StateControllerConfig;
-use carbide_utils::config::as_duration;
+use carbide_utils::config::{as_duration, as_option_duration};
 use chrono::Duration;
 use duration_str::deserialize_duration_chrono;
 use serde::{Deserialize, Serialize};
+
+fn deserialize_option_positive_duration_chrono<'de, D>(
+    deserializer: D,
+) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(|value| {
+            let duration = duration_str::parse_chrono(&value).map_err(serde::de::Error::custom)?;
+            if duration <= Duration::zero() {
+                return Err(serde::de::Error::custom(
+                    "duration must be greater than zero",
+                ));
+            }
+            Ok(duration)
+        })
+        .transpose()
+}
 
 /// Deserializes a recurring interval and rejects zero or negative durations.
 fn deserialize_positive_duration_chrono<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -124,6 +143,18 @@ pub struct MachineStateControllerConfig {
         serialize_with = "as_duration"
     )]
     pub boot_interface_observation_interval: Duration,
+    #[serde(
+        default = "MachineStateControllerConfig::bios_apply_settle_timeout_default",
+        deserialize_with = "deserialize_positive_duration_chrono",
+        serialize_with = "as_duration"
+    )]
+    pub bios_apply_settle_timeout: Duration,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_option_positive_duration_chrono",
+        serialize_with = "as_option_duration"
+    )]
+    pub dpu_first_restart_delay: Option<Duration>,
 }
 
 impl MachineStateControllerConfig {
@@ -147,6 +178,9 @@ impl MachineStateControllerConfig {
             // Keep periodic Redfish reads out of unrelated controller tests.
             // Focused tests explicitly age the observation they exercise.
             boot_interface_observation_interval: Duration::weeks(52),
+            bios_apply_settle_timeout:
+                MachineStateControllerConfig::bios_apply_settle_timeout_default(),
+            dpu_first_restart_delay: None,
         }
     }
 
@@ -190,6 +224,10 @@ impl MachineStateControllerConfig {
     pub fn boot_interface_observation_interval_default() -> Duration {
         Duration::minutes(10)
     }
+
+    pub fn bios_apply_settle_timeout_default() -> Duration {
+        Duration::minutes(20)
+    }
 }
 
 impl Default for MachineStateControllerConfig {
@@ -213,6 +251,9 @@ impl Default for MachineStateControllerConfig {
                 MachineStateControllerConfig::polling_bios_setup_stuck_threshold_default(),
             boot_interface_observation_interval:
                 MachineStateControllerConfig::boot_interface_observation_interval_default(),
+            bios_apply_settle_timeout:
+                MachineStateControllerConfig::bios_apply_settle_timeout_default(),
+            dpu_first_restart_delay: None,
         }
     }
 }
