@@ -372,6 +372,7 @@ impl TestEnv {
             bmc_credential_ops: self.redfish_sim.clone(),
             ipmi_tool: self.ipmi_tool.clone(),
             site_config: self.config.machine_state_handler_site_config().into(),
+            named_bios_profiles: self.api.named_bios_profiles.clone(),
             component_manager: self.test_component_manager.clone(),
             credential_manager: self.test_credential_manager.clone(),
             bmc_rotation_gate: carbide_credential_rotation::RotationGate::new_for_family(
@@ -1673,6 +1674,7 @@ async fn create_test_env_with_overrides_inner(
                 bmc_credential_ops: redfish_sim.clone(),
                 ipmi_tool: ipmi_tool.clone(),
                 site_config: config.machine_state_handler_site_config().into(),
+                named_bios_profiles: api.named_bios_profiles.clone(),
                 component_manager: test_component_manager.clone(),
                 credential_manager: credential_manager.clone(),
                 bmc_rotation_gate: carbide_credential_rotation::RotationGate::new_for_family(

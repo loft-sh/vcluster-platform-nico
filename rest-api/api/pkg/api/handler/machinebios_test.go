@@ -24,10 +24,12 @@ import (
 func testMachineBiosResponse() *corev1.MachineBios {
 	biosVersion := "R3X318M"
 	registry := "BiosAttributeRegistry.1.0.0"
+	revision := "3f2a9c1d7b4e"
 	return &corev1.MachineBios{
 		Profile: &corev1.MachineBiosProfile{
 			Name:           "lenovo-h200",
 			AttributesJson: `{"OperatingModes_ChooseOperatingMode":"MaximumPerformance"}`,
+			Revision:       &revision,
 		},
 		Observation: &corev1.MachineBiosObservation{
 			ObservedAt:        timestamppb.New(time.Date(2026, 10, 25, 23, 52, 15, 0, time.UTC)),
@@ -36,6 +38,7 @@ func testMachineBiosResponse() *corev1.MachineBios {
 			AttributeRegistry: &registry,
 			CurrentJson:       `{"OperatingModes_ChooseOperatingMode":"CustomMode","SystemRecovery_POSTWatchdogTimerValue":5}`,
 			PendingJson:       `{}`,
+			AppliedRevision:   &revision,
 		},
 	}
 }
@@ -63,13 +66,14 @@ func TestMachineBiosHandlersProxyToCore(t *testing.T) {
 			expectJSON: func(machineID string) string {
 				return `{
 					"machineId": "` + machineID + `",
-					"profile": {"name": "lenovo-h200", "attributes": {"OperatingModes_ChooseOperatingMode": "MaximumPerformance"}},
+					"profile": {"name": "lenovo-h200", "revision": "3f2a9c1d7b4e", "attributes": {"OperatingModes_ChooseOperatingMode": "MaximumPerformance"}},
 					"observation": {
 						"observedAt": "2026-10-25T23:52:15Z",
 						"observedBy": "refresh",
 						"biosVersion": "R3X318M",
 						"attributeRegistry": "BiosAttributeRegistry.1.0.0",
 						"settingsAppliedAt": null,
+						"appliedRevision": "3f2a9c1d7b4e",
 						"current": {"OperatingModes_ChooseOperatingMode": "CustomMode", "SystemRecovery_POSTWatchdogTimerValue": 5},
 						"pending": {}
 					}
@@ -99,13 +103,14 @@ func TestMachineBiosHandlersProxyToCore(t *testing.T) {
 			expectJSON: func(machineID string) string {
 				return `{
 					"machineId": "` + machineID + `",
-					"profile": {"name": "lenovo-h200", "attributes": {"OperatingModes_ChooseOperatingMode": "MaximumPerformance"}},
+					"profile": {"name": "lenovo-h200", "revision": "3f2a9c1d7b4e", "attributes": {"OperatingModes_ChooseOperatingMode": "MaximumPerformance"}},
 					"observation": {
 						"observedAt": "2026-10-25T23:52:15Z",
 						"observedBy": "refresh",
 						"biosVersion": "R3X318M",
 						"attributeRegistry": "BiosAttributeRegistry.1.0.0",
 						"settingsAppliedAt": null,
+						"appliedRevision": "3f2a9c1d7b4e",
 						"current": {"OperatingModes_ChooseOperatingMode": "CustomMode", "SystemRecovery_POSTWatchdogTimerValue": 5},
 						"pending": {}
 					}

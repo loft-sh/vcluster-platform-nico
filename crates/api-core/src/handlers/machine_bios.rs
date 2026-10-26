@@ -20,15 +20,19 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use ::rpc::forge as rpc;
-use carbide_machine_controller::handler::named_bios_profile_for_explored_host;
+use carbide_machine_controller::handler::{
+    BIOS_PROFILE_DRIFT_HEALTH_SOURCE, bios_apply_refusal, named_bios_profile_for_explored_host,
+};
+use carbide_machine_controller::named_bios_profiles::StoredBiosProfile;
 use carbide_utils::redfish::BmcAccessInfo;
-use carbide_uuid::machine::MachineId;
+use carbide_uuid::machine::{HostMachineId, MachineId};
 use chrono::{TimeDelta, Utc};
+use health_report::HealthReportApplyMode;
 use libredfish::Redfish;
 use libredfish::model::ODataId;
 use model::machine::AnyMachine;
 use model::machine_bios::{
-    BiosObservationSource, MachineBiosObservation, bios_attribute_registry_location,
+    BiosObservationSource, BiosProfile, MachineBiosObservation, bios_attribute_registry_location,
     parse_bios_attribute_registry,
 };
 use serde_json::Value;
@@ -40,6 +44,7 @@ use crate::handlers::utils::convert_and_log_machine_id;
 
 const REFRESH_REUSE_SECONDS: i64 = 60;
 const BMC_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const MAINTENANCE_HEALTH_SOURCE: &str = "maintenance";
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct RegistryCacheKey {
@@ -116,16 +121,17 @@ pub(crate) async fn refresh_machine_bios(
     let (machine, mut txn) = api.load_machine(&machine_id, Default::default()).await?;
     let profile = bios_profile(api, &mut txn, &machine).await?;
     let stored = db::machine_bios_observation::find_by_machine_id(&mut txn, &machine_id).await?;
-    if let Some(stored) = stored.filter(|observation| {
+    if let Some(recent) = stored.as_ref().filter(|observation| {
         observation.is_refresh_within(TimeDelta::seconds(REFRESH_REUSE_SECONDS), Utc::now())
     }) {
         txn.commit().await?;
         return Ok(Response::new(machine_bios(
             machine_id,
             profile,
-            Some(stored),
+            Some(recent.clone()),
         )));
     }
+    let applied_revision = stored.and_then(|observation| observation.applied_revision);
     let bmc_access_info = bmc_access_info(&mut txn, &machine).await?;
     txn.commit().await?;
 
@@ -141,7 +147,7 @@ pub(crate) async fn refresh_machine_bios(
         .and_then(|info| info.dmi_data.as_ref())
         .map(|dmi| dmi.bios_version.clone())
         .filter(|version| !version.is_empty());
-    let observation = MachineBiosObservation::from_bios_resource(
+    let mut observation = MachineBiosObservation::from_bios_resource(
         machine_id,
         BiosObservationSource::Refresh,
         Utc::now(),
@@ -154,6 +160,7 @@ pub(crate) async fn refresh_machine_bios(
             "the BMC of machine {machine_id} returned a Bios resource without an Attributes object"
         ))
     })?;
+    observation.applied_revision = applied_revision;
 
     let mut txn = api.txn_begin().await?;
     db::machine_bios_observation::upsert(&mut txn, &observation).await?;
@@ -207,6 +214,111 @@ pub(crate) async fn get_machine_bios_attributes(
     Ok(Response::new(attributes))
 }
 
+pub(crate) async fn apply_machine_bios(
+    api: &Api,
+    request: Request<MachineId>,
+) -> Result<Response<rpc::ApplyMachineBiosResponse>, Status> {
+    log_request_data(&request);
+    let machine_id: HostMachineId = convert_and_log_machine_id(Some(request.get_ref()))?;
+
+    let (machine, mut txn) = api.load_machine(&machine_id, Default::default()).await?;
+    let has_instance = db::instance::find_id_by_machine_id(&mut txn, &machine.id)
+        .await?
+        .is_some();
+    if let Some(refusal) = bios_apply_refusal(
+        &machine.id,
+        machine.current_state(),
+        machine
+            .health_reports
+            .merges
+            .contains_key(MAINTENANCE_HEALTH_SOURCE),
+        has_instance,
+    ) {
+        return Err(CarbideError::FailedPrecondition(refusal).into());
+    }
+    db::machine::remove_health_report(
+        &mut txn,
+        &machine.id,
+        HealthReportApplyMode::Merge,
+        BIOS_PROFILE_DRIFT_HEALTH_SOURCE,
+    )
+    .await?;
+    txn.commit().await?;
+
+    if !crate::handlers::bmc_endpoint_explorer::reverify_host_boot_configuration(api, machine_id)
+        .await?
+    {
+        return Err(CarbideError::FailedPrecondition(format!(
+            "machine {machine_id} has no desired boot interface, so its BIOS cannot be applied"
+        ))
+        .into());
+    }
+    tracing::info!(
+        %machine_id,
+        "Applying the host bios-profile now; the host stays in maintenance"
+    );
+
+    Ok(Response::new(rpc::ApplyMachineBiosResponse {
+        accepted: true,
+    }))
+}
+
+pub(crate) async fn upsert_bios_profile(
+    api: &Api,
+    request: Request<rpc::BiosProfile>,
+) -> Result<Response<rpc::BiosProfile>, Status> {
+    log_request_data(&request);
+    let profile = BiosProfile::try_from(request.into_inner()).map_err(CarbideError::from)?;
+    StoredBiosProfile::try_from(&profile).map_err(CarbideError::InvalidArgument)?;
+
+    let mut txn = api.txn_begin().await?;
+    let stored = db::named_bios_profile::upsert(&mut txn, &profile).await?;
+    txn.commit().await?;
+    api.named_bios_profiles.invalidate();
+    tracing::info!(
+        bios_profile = %stored.name,
+        revision = %stored.revision,
+        "Stored named BIOS profile"
+    );
+
+    Ok(Response::new(stored.into()))
+}
+
+pub(crate) async fn delete_bios_profile(
+    api: &Api,
+    request: Request<rpc::BiosProfileName>,
+) -> Result<Response<()>, Status> {
+    log_request_data(&request);
+    let name = request.into_inner().name;
+
+    let mut txn = api.txn_begin().await?;
+    let deleted = db::named_bios_profile::delete(&mut txn, &name).await?;
+    txn.commit().await?;
+    if !deleted {
+        return Err(CarbideError::NotFoundError {
+            kind: "bios_profile",
+            id: name,
+        }
+        .into());
+    }
+    api.named_bios_profiles.invalidate();
+    tracing::info!(bios_profile = %name, "Deleted named BIOS profile");
+
+    Ok(Response::new(()))
+}
+
+pub(crate) async fn list_bios_profiles(
+    api: &Api,
+    request: Request<rpc::ListBiosProfilesRequest>,
+) -> Result<Response<rpc::BiosProfileList>, Status> {
+    log_request_data(&request);
+    let profiles = db::named_bios_profile::list(&api.database_connection).await?;
+
+    Ok(Response::new(rpc::BiosProfileList {
+        profiles: profiles.into_iter().map(Into::into).collect(),
+    }))
+}
+
 async fn bios_profile(
     api: &Api,
     txn: &mut db::Transaction<'_>,
@@ -222,15 +334,21 @@ async fn bios_profile(
     else {
         return Ok(None);
     };
+    let stored = api
+        .named_bios_profiles
+        .profiles(&api.database_connection)
+        .await?;
     Ok(named_bios_profile_for_explored_host(
         &machine.metadata.labels,
+        &stored,
         &api.runtime_config.named_bios_profiles,
         &endpoint.report,
     )
-    .map(|(name, profile)| rpc::MachineBiosProfile {
-        name: name.clone(),
-        attributes_json: Value::Object(profile.attributes.clone().into_iter().collect())
+    .map(|selected| rpc::MachineBiosProfile {
+        name: selected.name.to_string(),
+        attributes_json: Value::Object(selected.profile.attributes.clone().into_iter().collect())
             .to_string(),
+        revision: selected.revision.map(str::to_string),
     }))
 }
 

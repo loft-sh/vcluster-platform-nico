@@ -506,6 +506,10 @@ service Forge {
   rpc GetMachineBios(common.MachineId) returns (MachineBios);
   rpc RefreshMachineBios(common.MachineId) returns (MachineBios);
   rpc GetMachineBiosAttributes(common.MachineId) returns (MachineBiosAttributes);
+  rpc ApplyMachineBios(common.MachineId) returns (ApplyMachineBiosResponse);
+  rpc UpsertBiosProfile(BiosProfile) returns (BiosProfile);
+  rpc DeleteBiosProfile(BiosProfileName) returns (google.protobuf.Empty);
+  rpc ListBiosProfiles(ListBiosProfilesRequest) returns (BiosProfileList);
 
   // Get Network topology
   rpc GetNetworkTopology(NetworkTopologyRequest) returns (NetworkTopologyData);
@@ -11346,6 +11350,7 @@ message MachineBios {
 message MachineBiosProfile {
   string name = 1;
   string attributes_json = 2;
+  optional string revision = 3;
 }
 
 message MachineBiosObservation {
@@ -11356,6 +11361,7 @@ message MachineBiosObservation {
   optional google.protobuf.Timestamp settings_applied_at = 5;
   string current_json = 6;
   string pending_json = 7;
+  optional string applied_revision = 8;
 }
 
 message MachineBiosAttributes {
@@ -11373,6 +11379,30 @@ message MachineBiosAttribute {
   optional double upper_bound = 7;
   optional string help_text = 8;
   optional string default_value = 9;
+}
+
+message ApplyMachineBiosResponse {
+  bool accepted = 1;
+}
+
+message BiosProfile {
+  string name = 1;
+  string vendor = 2;
+  string model = 3;
+  optional string attribute_registry = 4;
+  string attributes_json = 5;
+  string revision = 6;
+  optional google.protobuf.Timestamp updated_at = 7;
+}
+
+message BiosProfileName {
+  string name = 1;
+}
+
+message ListBiosProfilesRequest {}
+
+message BiosProfileList {
+  repeated BiosProfile profiles = 1;
 }
 
 message GetContainerRegistryCredentialRequest {

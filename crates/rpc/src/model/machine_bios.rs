@@ -15,9 +15,12 @@
  * limitations under the License.
  */
 
-use model::machine_bios::{BiosAttributeDefinition, MachineBiosObservation};
+use model::machine_bios::{
+    BiosAttributeDefinition, BiosProfile, MachineBiosObservation, parse_bios_profile_attributes,
+};
 
 use crate as rpc;
+use crate::errors::RpcDataConversionError;
 
 impl From<MachineBiosObservation> for rpc::forge::MachineBiosObservation {
     fn from(observation: MachineBiosObservation) -> Self {
@@ -29,6 +32,54 @@ impl From<MachineBiosObservation> for rpc::forge::MachineBiosObservation {
             settings_applied_at: observation.settings_applied_at.map(Into::into),
             current_json: serde_json::Value::Object(observation.current).to_string(),
             pending_json: serde_json::Value::Object(observation.pending).to_string(),
+            applied_revision: observation.applied_revision,
+        }
+    }
+}
+
+impl TryFrom<rpc::forge::BiosProfile> for BiosProfile {
+    type Error = RpcDataConversionError;
+
+    fn try_from(profile: rpc::forge::BiosProfile) -> Result<Self, Self::Error> {
+        for (field, value) in [
+            ("name", &profile.name),
+            ("vendor", &profile.vendor),
+            ("model", &profile.model),
+        ] {
+            if value.trim().is_empty() {
+                return Err(RpcDataConversionError::MissingArgument(field));
+            }
+        }
+        let attributes = parse_bios_profile_attributes(&profile.attributes_json)
+            .map_err(RpcDataConversionError::InvalidArgument)?;
+        let mut bios_profile = BiosProfile {
+            name: profile.name,
+            vendor: profile.vendor,
+            model: profile.model,
+            attribute_registry: profile
+                .attribute_registry
+                .filter(|registry| !registry.trim().is_empty()),
+            attributes,
+            revision: profile.revision,
+            updated_at: None,
+        };
+        if bios_profile.revision.trim().is_empty() {
+            bios_profile.revision = bios_profile.content_revision();
+        }
+        Ok(bios_profile)
+    }
+}
+
+impl From<BiosProfile> for rpc::forge::BiosProfile {
+    fn from(profile: BiosProfile) -> Self {
+        rpc::forge::BiosProfile {
+            name: profile.name,
+            vendor: profile.vendor,
+            model: profile.model,
+            attribute_registry: profile.attribute_registry,
+            attributes_json: serde_json::Value::Object(profile.attributes).to_string(),
+            revision: profile.revision,
+            updated_at: profile.updated_at.map(Into::into),
         }
     }
 }
@@ -53,6 +104,7 @@ impl From<BiosAttributeDefinition> for rpc::forge::MachineBiosAttribute {
 mod tests {
     use std::str::FromStr;
 
+    use carbide_test_support::value_scenarios;
     use carbide_uuid::machine::MachineId;
     use chrono::{DateTime, Utc};
     use model::machine_bios::BiosObservationSource;
@@ -84,9 +136,14 @@ mod tests {
             settings_applied_at: None,
             current: current.as_object().unwrap().clone(),
             pending: pending.as_object().unwrap().clone(),
+            applied_revision: Some("3f2a9c1d7b4e".to_string()),
         });
 
         assert_eq!(observation.observed_by, "post_reboot");
+        assert_eq!(
+            observation.applied_revision.as_deref(),
+            Some("3f2a9c1d7b4e")
+        );
         assert_eq!(
             observation
                 .observed_at
@@ -103,6 +160,78 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&observation.pending_json).unwrap(),
             pending
+        );
+    }
+
+    fn rpc_profile(
+        name: &str,
+        vendor: &str,
+        attributes_json: &str,
+        revision: &str,
+    ) -> rpc::forge::BiosProfile {
+        rpc::forge::BiosProfile {
+            name: name.to_string(),
+            vendor: vendor.to_string(),
+            model: "ThinkSystem SR680a V3".to_string(),
+            attribute_registry: Some("BiosAttributeRegistry.1.0.0".to_string()),
+            attributes_json: attributes_json.to_string(),
+            revision: revision.to_string(),
+            updated_at: None,
+        }
+    }
+
+    #[test]
+    fn bios_profile_upserts_are_validated() {
+        let valid = r#"{"OperatingModes_ChooseOperatingMode": "MaximumPerformance", "SystemRecovery_POSTWatchdogTimerValue": 5}"#;
+        value_scenarios!(
+            run = |profile: rpc::forge::BiosProfile| {
+                BiosProfile::try_from(profile)
+                    .map(|profile| (profile.name, profile.revision))
+                    .map_err(|error| error.to_string())
+            };
+            "a complete profile keeps the platform revision" {
+                rpc_profile("lenovo-h200", "Lenovo", valid, "3f2a9c1d7b4e")
+                    => Ok(("lenovo-h200".to_string(), "3f2a9c1d7b4e".to_string())),
+            }
+            "name, vendor and model are required" {
+                rpc_profile("", "Lenovo", valid, "r1") => Err("argument name is missing".to_string()),
+                rpc_profile("lenovo-h200", " ", valid, "r1") => Err("argument vendor is missing".to_string()),
+            }
+            "attributes must be a JSON object of scalars" {
+                rpc_profile("lenovo-h200", "Lenovo", "[]", "r1")
+                    => Err("argument is invalid: BIOS profile attributes must be a JSON object".to_string()),
+                rpc_profile("lenovo-h200", "Lenovo", r#"{"A": {"B": 1}}"#, "r1")
+                    => Err("argument is invalid: BIOS profile attribute A must be a string, number or boolean".to_string()),
+            }
+        );
+        let mut no_model = rpc_profile("lenovo-h200", "Lenovo", valid, "r1");
+        no_model.model = String::new();
+        assert_eq!(
+            BiosProfile::try_from(no_model).unwrap_err().to_string(),
+            "argument model is missing"
+        );
+    }
+
+    #[test]
+    fn bios_profile_without_a_revision_gets_one_from_its_content() {
+        let attributes = r#"{"OperatingModes_ChooseOperatingMode": "MaximumPerformance"}"#;
+        let mut no_registry = rpc_profile("lenovo-h200", "Lenovo", attributes, "");
+        no_registry.attribute_registry = Some(String::new());
+        let profile = BiosProfile::try_from(no_registry).unwrap();
+
+        assert_eq!(profile.attribute_registry, None);
+        assert_eq!(profile.revision, profile.content_revision());
+        assert_eq!(
+            rpc::forge::BiosProfile::from(profile.clone()),
+            rpc::forge::BiosProfile {
+                name: "lenovo-h200".to_string(),
+                vendor: "Lenovo".to_string(),
+                model: "ThinkSystem SR680a V3".to_string(),
+                attribute_registry: None,
+                attributes_json: attributes.replace(": ", ":"),
+                revision: profile.revision,
+                updated_at: None,
+            }
         );
     }
 }

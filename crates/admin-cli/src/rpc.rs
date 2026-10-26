@@ -297,6 +297,31 @@ impl ApiClient {
         Ok(self.0.get_machine_bios_attributes(id).await?)
     }
 
+    pub(crate) async fn apply_machine_bios(
+        &self,
+        id: MachineId,
+    ) -> CarbideCliResult<rpc::ApplyMachineBiosResponse> {
+        Ok(self.0.apply_machine_bios(id).await?)
+    }
+
+    pub(crate) async fn list_bios_profiles(&self) -> CarbideCliResult<rpc::BiosProfileList> {
+        Ok(self.0.list_bios_profiles().await?)
+    }
+
+    pub(crate) async fn upsert_bios_profile(
+        &self,
+        profile: rpc::BiosProfile,
+    ) -> CarbideCliResult<rpc::BiosProfile> {
+        Ok(self.0.upsert_bios_profile(profile).await?)
+    }
+
+    pub(crate) async fn delete_bios_profile(&self, name: String) -> CarbideCliResult<()> {
+        Ok(self
+            .0
+            .delete_bios_profile(rpc::BiosProfileName { name })
+            .await?)
+    }
+
     pub(crate) async fn get_all_machines(
         &self,
         request: rpc::MachineSearchConfig,

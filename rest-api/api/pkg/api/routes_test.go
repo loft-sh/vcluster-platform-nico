@@ -60,7 +60,8 @@ func TestNewAPIRoutes(t *testing.T) {
 		"expected-rack-group":       8,
 		"expected-switch":           7,
 		"instance-type":             5,
-		"machine":                   24,
+		"machine":                   25,
+		"bios-profile":              3,
 		"allocation":                6,
 		"subnet":                    5,
 		"machine-instance-type":     3,
@@ -205,6 +206,11 @@ func TestNewAPIRoutes(t *testing.T) {
 			assertRouteExists(t, got, http.MethodGet, machineAdminPath+"/bios")
 			assertRouteExists(t, got, http.MethodPost, machineAdminPath+"/bios/refresh")
 			assertRouteExists(t, got, http.MethodGet, machineAdminPath+"/bios/attributes")
+			assertRouteExists(t, got, http.MethodPost, machineAdminPath+"/bios/apply")
+			biosProfilePath := "/org/:orgName/" + cfg.GetAPIName() + "/bios-profile"
+			assertRouteExists(t, got, http.MethodGet, biosProfilePath)
+			assertRouteExists(t, got, http.MethodPut, biosProfilePath+"/:name")
+			assertRouteExists(t, got, http.MethodDelete, biosProfilePath+"/:name")
 			assertRouteExists(t, got, http.MethodPost, machineAdminPath+"/decommission")
 			assertRouteExists(t, got, http.MethodPost, machineAdminPath+"/validation/run")
 			assertRouteExists(t, got, http.MethodGet, machineAdminPath+"/validation/run")

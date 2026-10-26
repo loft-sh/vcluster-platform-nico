@@ -32,6 +32,9 @@ List the BIOS attributes the BMC offers, as JSON:
     $ nico-admin-cli --format json machine bios attributes \
     fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
 
+Apply the machine's bios-profile now, while it is in maintenance:
+    $ nico-admin-cli machine bios apply fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
+
 ")]
 pub(crate) enum Args {
     #[clap(about = "Show the last BIOS settings NICo read and the bios-profile it applies")]
@@ -72,6 +75,18 @@ As JSON (the global --format flag):
 
 ")]
     Attributes(BiosArgs),
+    #[clap(
+        about = "Apply the machine's bios-profile now",
+        long_about = "Apply the machine's bios-profile now. The machine must be in maintenance, Ready and without an instance; NICo then re-checks its BIOS and boot configuration and re-applies the profile when it differs."
+    )]
+    #[command(after_long_help = "\
+EXAMPLES:
+
+Apply the bios-profile of a machine in maintenance:
+    $ nico-admin-cli machine bios apply fm100ht038bg3qsho433vkg684heguv282qaggmrsh2ugn1qk096n2c6hcg
+
+")]
+    Apply(BiosArgs),
 }
 
 #[derive(Parser, Debug)]

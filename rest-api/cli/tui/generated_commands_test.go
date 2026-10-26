@@ -643,6 +643,8 @@ func TestGeneratedPathResourcePolicy_CoversEveryParameter(t *testing.T) {
 		"task cancel|id",
 		"task cancel cancel-task|id",
 		"task get|id",
+		"bios-profile delete|name",
+		"bios-profile update|name",
 	}, freeForm)
 }
 

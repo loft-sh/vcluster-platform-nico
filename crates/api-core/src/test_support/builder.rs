@@ -371,6 +371,7 @@ impl TestApiBuilder {
                 .console_log_source
                 .unwrap_or_else(|| Arc::new(crate::console_logs::UnavailableSource)),
             bios_attribute_registries: Default::default(),
+            named_bios_profiles: Default::default(),
             cancel_token: CancellationToken::new(),
         }
     }

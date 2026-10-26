@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"google.golang.org/protobuf/proto"
@@ -62,6 +63,40 @@ func (h RefreshMachineBiosHandler) Handle(c echo.Context) error {
 		return apiErr.Send(c)
 	}
 	return sendMachineBios(c, machineID, coreResp)
+}
+
+type ApplyMachineBiosHandler struct {
+	dbSession *cdb.Session
+	scp       *sc.ClientPool
+}
+
+func NewApplyMachineBiosHandler(dbSession *cdb.Session, scp *sc.ClientPool, _ *config.Config) ApplyMachineBiosHandler {
+	return ApplyMachineBiosHandler{
+		dbSession: dbSession,
+		scp:       scp,
+	}
+}
+
+func (h ApplyMachineBiosHandler) Handle(c echo.Context) error {
+	coreResp := &corev1.ApplyMachineBiosResponse{}
+	_, apiErr := proxyMachineBiosRequest(c, h.dbSession, h.scp, "Apply", corev1.Forge_ApplyMachineBios_FullMethodName, coreResp)
+	if apiErr != nil {
+		if apiErr.Code == http.StatusPreconditionFailed {
+			return cutil.NewAPIErrorResponse(c, http.StatusConflict, coreStatusMessage(apiErr.Message), nil)
+		}
+		return apiErr.Send(c)
+	}
+	return c.JSON(http.StatusAccepted, model.APIMachineBiosApplyResponse{Accepted: coreResp.GetAccepted()})
+}
+
+func coreStatusMessage(message string) string {
+	if _, description, found := strings.Cut(message, "desc = "); found {
+		message = description
+	}
+	if before, _, found := strings.Cut(message, " (type: "); found {
+		message = before
+	}
+	return message
 }
 
 type GetMachineBiosAttributesHandler struct {

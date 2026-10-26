@@ -156,7 +156,10 @@ mod sku;
 mod test_machine_setup;
 
 use bios_config::handle_bios_setup_failed_recovery;
-pub use bios_config::named_bios_profile_for_explored_host;
+pub use bios_config::{
+    BIOS_PROFILE_DRIFT_HEALTH_SOURCE, SelectedBiosProfile, bios_apply_refusal,
+    named_bios_profile_for_explored_host,
+};
 use extension_services::{cleanup_terminated_extension_services, get_extension_services_status};
 use helpers::{
     DpuDiscoveringStateHelper, DpuInitStateHelper, ManagedHostStateHelper, NextState,

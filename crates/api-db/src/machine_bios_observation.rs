@@ -37,6 +37,7 @@ struct ObservationRow {
     settings_applied_at: Option<DateTime<Utc>>,
     current: Json<Map<String, Value>>,
     pending: Json<Map<String, Value>>,
+    applied_revision: Option<String>,
 }
 
 impl TryFrom<ObservationRow> for MachineBiosObservation {
@@ -60,6 +61,7 @@ impl TryFrom<ObservationRow> for MachineBiosObservation {
             settings_applied_at: row.settings_applied_at,
             current: row.current.0,
             pending: row.pending.0,
+            applied_revision: row.applied_revision,
         })
     }
 }
@@ -70,8 +72,8 @@ pub async fn upsert(
 ) -> DatabaseResult<()> {
     let query = "INSERT INTO machine_bios_observations \
          (machine_id, observed_at, observed_by, bios_version, attribute_registry, \
-         settings_applied_at, current, pending) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+         settings_applied_at, current, pending, applied_revision) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
          ON CONFLICT (machine_id) DO UPDATE SET \
          observed_at = EXCLUDED.observed_at, \
          observed_by = EXCLUDED.observed_by, \
@@ -79,7 +81,9 @@ pub async fn upsert(
          attribute_registry = EXCLUDED.attribute_registry, \
          settings_applied_at = EXCLUDED.settings_applied_at, \
          current = EXCLUDED.current, \
-         pending = EXCLUDED.pending";
+         pending = EXCLUDED.pending, \
+         applied_revision = COALESCE(EXCLUDED.applied_revision, \
+         machine_bios_observations.applied_revision)";
     sqlx::query(query)
         .bind(observation.machine_id)
         .bind(observation.observed_at)
@@ -89,6 +93,7 @@ pub async fn upsert(
         .bind(observation.settings_applied_at)
         .bind(Json(&observation.current))
         .bind(Json(&observation.pending))
+        .bind(&observation.applied_revision)
         .execute(txn)
         .await
         .map_err(|e| DatabaseError::query(query, e))?;
@@ -100,7 +105,7 @@ pub async fn find_by_machine_id(
     machine_id: &MachineId,
 ) -> DatabaseResult<Option<MachineBiosObservation>> {
     let query = "SELECT machine_id, observed_at, observed_by, bios_version, attribute_registry, \
-         settings_applied_at, current, pending \
+         settings_applied_at, current, pending, applied_revision \
          FROM machine_bios_observations WHERE machine_id = $1";
     sqlx::query_as::<_, ObservationRow>(query)
         .bind(machine_id)

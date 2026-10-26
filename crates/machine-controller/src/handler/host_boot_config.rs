@@ -504,6 +504,7 @@ mod tests {
     use crate::config::{MachineStateHandlerSiteConfig, NamedBiosProfile};
     use crate::context::MachineStateHandlerServices;
     use crate::metrics::MachineMetrics;
+    use crate::named_bios_profiles::NamedBiosProfileCache;
 
     fn reachability_params() -> ReachabilityParams {
         ReachabilityParams {
@@ -548,6 +549,7 @@ mod tests {
             bmc_credential_ops: redfish_sim,
             ipmi_tool: carbide_ipmi::test_support(),
             site_config: Arc::new(site_config),
+            named_bios_profiles: NamedBiosProfileCache::with_profiles(Default::default()),
             component_manager: None,
             credential_manager: Arc::new(TestCredentialManager::default()),
             per_object_metrics_registry: PerObjectMetricsRegistry::new(

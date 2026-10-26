@@ -32,6 +32,7 @@ use state_controller::state_handler::{StateHandlerContextObjects, StateHandlerEr
 
 use crate::config::MachineStateHandlerSiteConfig;
 use crate::metrics::MachineMetrics;
+use crate::named_bios_profiles::NamedBiosProfileCache;
 use crate::per_object::MachinePerObjectInfo;
 
 pub struct MachineStateHandlerContextObjects {}
@@ -59,6 +60,7 @@ pub struct MachineStateHandlerServices {
     pub ipmi_tool: Arc<dyn IPMITool>,
     /// Configuration used by MachineStateHandler.
     pub site_config: Arc<MachineStateHandlerSiteConfig>,
+    pub named_bios_profiles: NamedBiosProfileCache,
     /// Optional Component Manager backend for rack-scale maintenance operations.
     pub component_manager: Option<Arc<ComponentManager>>,
     pub credential_manager: Arc<dyn CredentialManager>,

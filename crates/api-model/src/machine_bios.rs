@@ -21,6 +21,7 @@ use carbide_uuid::machine::MachineId;
 use chrono::{DateTime, TimeDelta, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, strum_macros::EnumString, strum_macros::IntoStaticStr,
@@ -48,6 +49,7 @@ pub struct MachineBiosObservation {
     pub settings_applied_at: Option<DateTime<Utc>>,
     pub current: Map<String, Value>,
     pub pending: Map<String, Value>,
+    pub applied_revision: Option<String>,
 }
 
 impl MachineBiosObservation {
@@ -77,6 +79,7 @@ impl MachineBiosObservation {
                 .map(|time| time.with_timezone(&Utc)),
             current,
             pending: pending.into_iter().collect(),
+            applied_revision: None,
         })
     }
 
@@ -84,6 +87,57 @@ impl MachineBiosObservation {
         self.observed_by == BiosObservationSource::Refresh
             && now.signed_duration_since(self.observed_at) < window
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BiosProfile {
+    pub name: String,
+    pub vendor: String,
+    pub model: String,
+    pub attribute_registry: Option<String>,
+    pub attributes: Map<String, Value>,
+    pub revision: String,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+impl BiosProfile {
+    pub fn content_revision(&self) -> String {
+        let mut hash = Sha256::new();
+        let mut write = |value: &str| {
+            hash.update(value.as_bytes());
+            hash.update([0]);
+        };
+        write(&self.vendor);
+        write(&self.model);
+        write(self.attribute_registry.as_deref().unwrap_or_default());
+        let mut attributes: Vec<_> = self.attributes.iter().collect();
+        attributes.sort_by_key(|(name, _)| *name);
+        for (name, value) in attributes {
+            write(name);
+            write(&value.to_string());
+        }
+        hex::encode(hash.finalize())[..12].to_string()
+    }
+}
+
+pub fn parse_bios_profile_attributes(attributes_json: &str) -> Result<Map<String, Value>, String> {
+    let attributes = match serde_json::from_str::<Value>(attributes_json) {
+        Ok(Value::Object(attributes)) => attributes,
+        Ok(_) => return Err("BIOS profile attributes must be a JSON object".to_string()),
+        Err(error) => {
+            return Err(format!(
+                "BIOS profile attributes are not valid JSON: {error}"
+            ));
+        }
+    };
+    if let Some(name) = attributes.iter().find_map(|(name, value)| {
+        (!matches!(value, Value::String(_) | Value::Number(_) | Value::Bool(_))).then_some(name)
+    }) {
+        return Err(format!(
+            "BIOS profile attribute {name} must be a string, number or boolean"
+        ));
+    }
+    Ok(attributes)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -256,6 +310,7 @@ mod tests {
                     .as_object()
                     .unwrap()
                     .clone(),
+                applied_revision: None,
             }
         );
     }
@@ -312,6 +367,7 @@ mod tests {
             settings_applied_at: None,
             current: Map::new(),
             pending: Map::new(),
+            applied_revision: None,
         };
         value_scenarios!(
             run = |(observed_by, observed_at, now): (BiosObservationSource, DateTime<Utc>, DateTime<Utc>)| {
@@ -327,6 +383,52 @@ mod tests {
                 (BiosObservationSource::LifecycleGate, at(0), at(1)) => false,
                 (BiosObservationSource::PostReboot, at(0), at(1)) => false,
             }
+        );
+    }
+
+    #[test]
+    fn bios_profile_attributes_are_an_object_of_scalars() {
+        value_scenarios!(
+            run = |attributes_json: &str| parse_bios_profile_attributes(attributes_json).map(Value::Object);
+            "string, number and boolean values are kept" {
+                r#"{"A": "Enabled", "B": 5, "C": true}"# => Ok(json!({"A": "Enabled", "B": 5, "C": true})),
+                "{}" => Ok(json!({})),
+            }
+            "anything but an object of scalars is refused" {
+                r#"["A"]"# => Err("BIOS profile attributes must be a JSON object".to_string()),
+                r#"{"A": null}"# => Err("BIOS profile attribute A must be a string, number or boolean".to_string()),
+                r#"{"A": ["Enabled"]}"# => Err("BIOS profile attribute A must be a string, number or boolean".to_string()),
+                r#"{"A": {"B": 1}}"# => Err("BIOS profile attribute A must be a string, number or boolean".to_string()),
+            }
+        );
+        assert!(
+            parse_bios_profile_attributes("Enabled")
+                .unwrap_err()
+                .starts_with("BIOS profile attributes are not valid JSON")
+        );
+    }
+
+    #[test]
+    fn bios_profile_content_revision_follows_the_content_only() {
+        let profile = |attributes: Value, revision: &str| BiosProfile {
+            name: "lenovo-h200".to_string(),
+            vendor: "Lenovo".to_string(),
+            model: "ThinkSystem SR680a V3".to_string(),
+            attribute_registry: Some("BiosAttributeRegistry.1.0.0".to_string()),
+            attributes: attributes.as_object().unwrap().clone(),
+            revision: revision.to_string(),
+            updated_at: None,
+        };
+        let base = profile(json!({"A": "Enabled", "B": 5}), "");
+
+        assert_eq!(base.content_revision().len(), 12);
+        assert_eq!(
+            base.content_revision(),
+            profile(json!({"B": 5, "A": "Enabled"}), "r2").content_revision()
+        );
+        assert_ne!(
+            base.content_revision(),
+            profile(json!({"A": "Disabled", "B": 5}), "").content_revision()
         );
     }
 

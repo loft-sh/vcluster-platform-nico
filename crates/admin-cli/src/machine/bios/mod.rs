@@ -36,6 +36,9 @@ impl Run for Args {
             Args::Attributes(args) => {
                 cmd::handle_attributes(args, ctx.config.format, &ctx.api_client).await?;
             }
+            Args::Apply(args) => {
+                cmd::handle_apply(args, &ctx.api_client).await?;
+            }
         }
         Ok(())
     }
