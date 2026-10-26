@@ -513,6 +513,10 @@ service Forge {
   // system would select. Read-only; built for troubleshooting and verification.
   rpc GetMachineBootInterfaces(GetMachineBootInterfacesRequest) returns (GetMachineBootInterfacesResponse);
 
+  rpc GetMachineBios(common.MachineId) returns (MachineBios);
+  rpc RefreshMachineBios(common.MachineId) returns (MachineBios);
+  rpc GetMachineBiosAttributes(common.MachineId) returns (MachineBiosAttributes);
+
   // Get Network topology
   rpc GetNetworkTopology(NetworkTopologyRequest) returns (NetworkTopologyData);
   rpc FindNetworkDevicesByDeviceIds(NetworkDeviceIdList) returns (NetworkTopologyData);
@@ -11764,6 +11768,44 @@ message GetMachineBootInterfacesResponse {
   // Desired-state reconciliation details. Absent before a machine has a
   // persisted desired boot interface.
   Reconciliation reconciliation = 11;
+}
+
+message MachineBios {
+  common.MachineId machine_id = 1;
+  optional MachineBiosProfile profile = 2;
+  optional MachineBiosObservation observation = 3;
+}
+
+message MachineBiosProfile {
+  string name = 1;
+  string attributes_json = 2;
+}
+
+message MachineBiosObservation {
+  google.protobuf.Timestamp observed_at = 1;
+  string observed_by = 2;
+  optional string bios_version = 3;
+  optional string attribute_registry = 4;
+  optional google.protobuf.Timestamp settings_applied_at = 5;
+  string current_json = 6;
+  string pending_json = 7;
+}
+
+message MachineBiosAttributes {
+  string registry = 1;
+  repeated MachineBiosAttribute attributes = 2;
+}
+
+message MachineBiosAttribute {
+  string name = 1;
+  string display_name = 2;
+  string type = 3;
+  bool read_only = 4;
+  repeated string allowed_values = 5;
+  optional double lower_bound = 6;
+  optional double upper_bound = 7;
+  optional string help_text = 8;
+  optional string default_value = 9;
 }
 
 message GetContainerRegistryCredentialRequest {

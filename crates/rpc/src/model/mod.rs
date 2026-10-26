@@ -42,6 +42,7 @@ pub mod instance;
 pub mod instance_type;
 pub mod lldp;
 pub mod machine;
+pub mod machine_bios;
 pub mod machine_boot_interface;
 pub mod machine_boot_override;
 pub mod machine_validation;

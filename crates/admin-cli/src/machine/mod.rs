@@ -16,6 +16,7 @@
  */
 
 mod auto_update;
+mod bios;
 mod common;
 mod force_delete;
 mod hardware_info;
@@ -89,4 +90,9 @@ pub(crate) enum Cmd {
     NvlinkInfo(nvlink_info::Args),
     #[clap(about = "Show machine health history")]
     HealthHistory(health_history::Args),
+    #[clap(
+        subcommand,
+        about = "Show BIOS settings, the bios-profile, and the BIOS attribute registry"
+    )]
+    Bios(bios::Args),
 }

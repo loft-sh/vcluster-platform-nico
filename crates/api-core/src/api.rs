@@ -117,6 +117,7 @@ pub struct Api {
     /// listener.
     pub(crate) node_jwt_validator: Option<Arc<crate::node_auth::NodeJwtValidator>>,
     pub(crate) console_log_source: Arc<dyn crate::console_logs::ConsoleLogSource>,
+    pub(crate) bios_attribute_registries: crate::handlers::machine_bios::BiosAttributeRegistryCache,
     pub(crate) cancel_token: CancellationToken,
 }
 
@@ -1645,6 +1646,27 @@ impl Forge for Api {
         request: Request<rpc::GetMachineBootInterfacesRequest>,
     ) -> Result<Response<rpc::GetMachineBootInterfacesResponse>, Status> {
         crate::handlers::machine_boot_interfaces::get_machine_boot_interfaces(self, request).await
+    }
+
+    async fn get_machine_bios(
+        &self,
+        request: Request<MachineId>,
+    ) -> Result<Response<rpc::MachineBios>, Status> {
+        crate::handlers::machine_bios::get_machine_bios(self, request).await
+    }
+
+    async fn refresh_machine_bios(
+        &self,
+        request: Request<MachineId>,
+    ) -> Result<Response<rpc::MachineBios>, Status> {
+        crate::handlers::machine_bios::refresh_machine_bios(self, request).await
+    }
+
+    async fn get_machine_bios_attributes(
+        &self,
+        request: Request<MachineId>,
+    ) -> Result<Response<rpc::MachineBiosAttributes>, Status> {
+        crate::handlers::machine_bios::get_machine_bios_attributes(self, request).await
     }
 
     async fn get_network_topology(

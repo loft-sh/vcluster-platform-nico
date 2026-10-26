@@ -35,6 +35,8 @@ use model::machine::{
     BiosConfigInfo, BiosConfigState, HostMachine, ManagedHostState, ManagedHostStateSnapshot,
     PowerState,
 };
+use model::machine_bios::{BiosObservationSource, MachineBiosObservation};
+use model::site_explorer::EndpointExplorationReport;
 use state_controller::db_write_batch::WriteOpFn;
 use state_controller::state_handler::{
     StateHandlerContext, StateHandlerError, StateHandlerOutcome,
@@ -191,6 +193,38 @@ pub(super) struct BiosProfileDrift {
     unknown: Vec<String>,
 }
 
+pub(super) struct BiosReading {
+    bios: HashMap<String, serde_json::Value>,
+    pending: HashMap<String, serde_json::Value>,
+}
+
+fn named_bios_profile<'a>(
+    labels: &HashMap<String, String>,
+    named_bios_profiles: &'a HashMap<String, NamedBiosProfile>,
+) -> Option<(&'a String, &'a NamedBiosProfile)> {
+    labels
+        .get(BIOS_PROFILE_LABEL)
+        .and_then(|name| named_bios_profiles.get_key_value(name))
+}
+
+pub fn named_bios_profile_for_explored_host<'a>(
+    labels: &HashMap<String, String>,
+    named_bios_profiles: &'a HashMap<String, NamedBiosProfile>,
+    report: &EndpointExplorationReport,
+) -> Option<(&'a String, &'a NamedBiosProfile)> {
+    let (name, profile) = named_bios_profile(labels, named_bios_profiles)?;
+    let vendor_matches = report.vendor
+        == Some(carbide_redfish::libredfish::conv::bmc_vendor(
+            profile.vendor,
+        ));
+    let model_matches = report
+        .systems
+        .first()
+        .and_then(|system| system.model.as_deref())
+        .is_some_and(|model| libredfish::model_coerce(model) == profile.model);
+    (vendor_matches && model_matches).then_some((name, profile))
+}
+
 #[derive(Debug, PartialEq)]
 pub(super) enum BiosProfileDriftAction {
     Clear,
@@ -203,11 +237,8 @@ pub(super) async fn inspect_bios_profile_drift(
     redfish_client: &dyn Redfish,
     labels: &HashMap<String, String>,
     site_config: &MachineStateHandlerSiteConfig,
-) -> Result<Option<BiosProfileDrift>, RedfishError> {
-    let Some((name, profile)) = labels
-        .get(BIOS_PROFILE_LABEL)
-        .and_then(|name| site_config.named_bios_profiles.get_key_value(name))
-    else {
+) -> Result<Option<(BiosProfileDrift, BiosReading)>, RedfishError> {
+    let Some((name, profile)) = named_bios_profile(labels, &site_config.named_bios_profiles) else {
         return Ok(None);
     };
     if !matches!(
@@ -219,7 +250,41 @@ pub(super) async fn inspect_bios_profile_drift(
     let bios = redfish_client.bios().await?;
     let current = libredfish::jsonmap::get_object(&bios, "Attributes", "Bios")?;
     let pending = redfish_client.pending().await?;
-    Ok(Some(compare_bios_profile(name, profile, current, &pending)))
+    let drift = compare_bios_profile(name, profile, current, &pending);
+    Ok(Some((drift, BiosReading { bios, pending })))
+}
+
+fn record_bios_observation(
+    ctx: &mut StateHandlerContext<'_, MachineStateHandlerContextObjects>,
+    host: &HostMachine,
+    reading: BiosReading,
+    observed_by: BiosObservationSource,
+) {
+    let bios_version = host
+        .status
+        .hardware_info
+        .as_ref()
+        .and_then(|info| info.dmi_data.as_ref())
+        .map(|dmi| dmi.bios_version.clone())
+        .filter(|version| !version.is_empty());
+    let Some(observation) = MachineBiosObservation::from_bios_resource(
+        host.id.to_machine_id(),
+        observed_by,
+        Utc::now(),
+        bios_version,
+        &reading.bios,
+        reading.pending,
+    ) else {
+        return;
+    };
+    let write: WriteOpFn = Box::new(move |txn| {
+        async move {
+            db::machine_bios_observation::upsert(txn, &observation).await?;
+            Ok(())
+        }
+        .boxed()
+    });
+    ctx.pending_db_writes.push(write);
 }
 
 fn compare_bios_profile(
@@ -299,7 +364,11 @@ pub(super) async fn bios_profile_needs_reapply(
     )
     .await
     {
-        Ok(drift) => {
+        Ok(inspection) => {
+            let drift = inspection.map(|(drift, reading)| {
+                record_bios_observation(ctx, host, reading, BiosObservationSource::LifecycleGate);
+                drift
+            });
             let action = bios_profile_drift_action(drift.as_ref(), bios_profile_persistent(host));
             record_bios_profile_drift(ctx, host, drift.as_ref(), &action);
             action == BiosProfileDriftAction::Remediate
@@ -328,7 +397,11 @@ pub(super) async fn verify_bios_profile_after_reboot(
     )
     .await
     {
-        Ok(drift) => {
+        Ok(inspection) => {
+            let drift = inspection.map(|(drift, reading)| {
+                record_bios_observation(ctx, host, reading, BiosObservationSource::PostReboot);
+                drift
+            });
             let action = bios_profile_drift_action(drift.as_ref(), true);
             record_bios_profile_drift(ctx, host, drift.as_ref(), &action);
         }
@@ -1266,12 +1339,58 @@ mod tests {
                 async move {
                     inspect_bios_profile_drift(client, &labels, site_config)
                         .await
-                        .map(|drift| drift.map(|drift| (drift.drifted, drift.unknown)))
+                        .map(|inspection| {
+                            inspection.map(|(drift, _)| (drift.drifted, drift.unknown))
+                        })
                         .map_err(|e| e.to_string())
                 }
             },
         )
         .await;
+    }
+
+    #[test]
+    fn explored_host_gets_the_labelled_recipe_only_for_its_vendor_and_model() {
+        use bmc_vendor::BMCVendor;
+        use model::site_explorer::ComputerSystem;
+
+        let named_bios_profiles = HashMap::from([(
+            "lenovo-h200".to_string(),
+            NamedBiosProfile {
+                vendor: RedfishVendor::Lenovo,
+                model: "ThinkSystem_SR680a_V3".to_string(),
+                attributes: HashMap::new(),
+            },
+        )]);
+        let report = |vendor: BMCVendor, model: Option<&str>| EndpointExplorationReport {
+            vendor: Some(vendor),
+            systems: vec![ComputerSystem {
+                model: model.map(str::to_string),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        value_scenarios!(
+            run = |(label, report): (Option<&str>, EndpointExplorationReport)| {
+                let labels: HashMap<String, String> = label
+                    .map(|name| (BIOS_PROFILE_LABEL.to_string(), name.to_string()))
+                    .into_iter()
+                    .collect();
+                named_bios_profile_for_explored_host(&labels, &named_bios_profiles, &report)
+                    .map(|(name, _)| name.clone())
+            };
+            "the recipe the gate applies" {
+                (Some("lenovo-h200"), report(BMCVendor::Lenovo, Some("ThinkSystem SR680a V3")))
+                    => Some("lenovo-h200".to_string()),
+            }
+            "no recipe applies" {
+                (None, report(BMCVendor::Lenovo, Some("ThinkSystem SR680a V3"))) => None,
+                (Some("missing"), report(BMCVendor::Lenovo, Some("ThinkSystem SR680a V3"))) => None,
+                (Some("lenovo-h200"), report(BMCVendor::Dell, Some("ThinkSystem SR680a V3"))) => None,
+                (Some("lenovo-h200"), report(BMCVendor::Lenovo, Some("ThinkSystem SR650 V3"))) => None,
+                (Some("lenovo-h200"), report(BMCVendor::Lenovo, None)) => None,
+            }
+        );
     }
 
     #[test]

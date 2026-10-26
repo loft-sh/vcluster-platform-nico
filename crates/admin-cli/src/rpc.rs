@@ -276,6 +276,27 @@ impl ApiClient {
             .await?)
     }
 
+    pub(crate) async fn get_machine_bios(
+        &self,
+        id: MachineId,
+    ) -> CarbideCliResult<rpc::MachineBios> {
+        Ok(self.0.get_machine_bios(id).await?)
+    }
+
+    pub(crate) async fn refresh_machine_bios(
+        &self,
+        id: MachineId,
+    ) -> CarbideCliResult<rpc::MachineBios> {
+        Ok(self.0.refresh_machine_bios(id).await?)
+    }
+
+    pub(crate) async fn get_machine_bios_attributes(
+        &self,
+        id: MachineId,
+    ) -> CarbideCliResult<rpc::MachineBiosAttributes> {
+        Ok(self.0.get_machine_bios_attributes(id).await?)
+    }
+
     pub(crate) async fn get_all_machines(
         &self,
         request: rpc::MachineSearchConfig,

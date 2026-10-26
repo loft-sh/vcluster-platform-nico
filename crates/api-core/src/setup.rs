@@ -757,6 +757,7 @@ pub async fn start_runtime(runtime_inputs: RuntimeInputs<'_>) -> eyre::Result<So
         bms_client: std::sync::OnceLock::new(),
         secrets_context,
         console_log_source,
+        bios_attribute_registries: Default::default(),
         cancel_token: cancel_token.clone(),
     });
 

@@ -1,0 +1,62 @@
+{
+  "@Redfish.Settings": {
+    "@odata.type": "#Settings.v1_3_5.Settings",
+    "Messages": [],
+    "SettingsObject": {
+      "@odata.id": "/redfish/v1/Systems/1/Bios/Pending"
+    },
+    "SupportedApplyTimes": [
+      "OnReset"
+    ],
+    "Time": "2026-10-25T23:52:15+00:00"
+  },
+  "@odata.context": "/redfish/v1/$metadata#Bios.Bios",
+  "@odata.etag": "\"cf97e46362a552f0a5604b\"",
+  "@odata.id": "/redfish/v1/Systems/1/Bios",
+  "@odata.type": "#Bios.v1_2_2.Bios",
+  "Actions": {
+    "#Bios.ChangePassword": {
+      "@Redfish.ActionInfo": "/redfish/v1/Systems/1/Bios/ChangePasswordActionInfo",
+      "PasswordName@Redfish.AllowableValues": [
+        "UefiAdminPassword",
+        "UefiPowerOnPassword"
+      ],
+      "target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ChangePassword",
+      "title": "ChangePassword"
+    },
+    "#Bios.ResetBios": {
+      "target": "/redfish/v1/Systems/1/Bios/Actions/Bios.ResetBios",
+      "title": "ResetBios"
+    },
+    "Oem": {}
+  },
+  "AttributeRegistry": "BiosAttributeRegistry.1.0.0",
+  "Attributes": {
+    "OperatingModes_ChooseOperatingMode": "CustomMode",
+    "DevicesandIOPorts_IntelVTforDirectedIOVTd": "Disabled",
+    "SystemRecovery_POSTWatchdogTimer": "Disabled",
+    "SystemRecovery_POSTWatchdogTimerValue": 5,
+    "TrustedComputingGroup_DeviceStatus": "TPM2.0 Device present."
+  },
+  "Description": "System Bios",
+  "Id": "Bios",
+  "Links": {
+    "ActiveSoftwareImage": {
+      "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI"
+    },
+    "SoftwareImages": [
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/UEFI"
+      }
+    ],
+    "SoftwareImages@odata.count": 1
+  },
+  "Name": "Bios",
+  "Oem": {
+    "Lenovo": {
+      "@odata.type": "#LenovoBios.v1_0_0.LenovoBios",
+      "IsUefiAdminPasswordSet": true,
+      "IsUefiPowerOnPasswordSet": false
+    }
+  }
+}
