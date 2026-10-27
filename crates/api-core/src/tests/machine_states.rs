@@ -2940,6 +2940,89 @@ async fn test_wait_for_bios_job_scheduled_skips_reboot_for_completed_job(pool: s
     );
 }
 
+#[crate::sqlx_test]
+async fn test_bios_config_without_job_restarts_the_host_in_its_own_iteration(pool: sqlx::PgPool) {
+    const RETRY_COUNT: u32 = 2;
+
+    let env = create_test_env(pool).await;
+    let mh = create_managed_host(&env).await;
+
+    env.redfish_sim
+        .set_lockdown(libredfish::EnabledDisabled::Disabled);
+    set_host_controller_state_stuck_in(
+        &env,
+        mh.host().id,
+        &ManagedHostState::HostInit {
+            machine_state: MachineState::WaitingForPlatformConfiguration {
+                retry_count: RETRY_COUNT,
+            },
+        },
+        0,
+    )
+    .await;
+    let restarts = |actions: &[RedfishSimAction]| {
+        actions
+            .iter()
+            .filter(|action| {
+                matches!(
+                    action,
+                    RedfishSimAction::Power(libredfish::SystemPowerControl::ForceRestart)
+                )
+            })
+            .count()
+    };
+    let machine_setups = |actions: &[RedfishSimAction]| {
+        actions
+            .iter()
+            .filter(|action| matches!(action, RedfishSimAction::MachineSetup { .. }))
+            .count()
+    };
+
+    let before_setup = env.redfish_sim.timepoint();
+    env.run_machine_state_controller_iteration().await;
+
+    let mut txn = env.db_txn().await;
+    let host = mh.host().db_machine(&mut txn).await;
+    assert_eq!(
+        host.current_state(),
+        &ManagedHostState::HostInit {
+            machine_state: MachineState::WaitingForBiosJob {
+                bios_config_info: BiosConfigInfo {
+                    bios_job_id: None,
+                    bios_config_state: BiosConfigState::RebootHost,
+                    retry_count: RETRY_COUNT,
+                },
+            },
+        }
+    );
+    drop(txn);
+    let actions = env.redfish_sim.actions_since(&before_setup).all_hosts();
+    assert_eq!(machine_setups(&actions), 1, "{actions:?}");
+    assert_eq!(
+        restarts(&actions),
+        0,
+        "the restart must not share an iteration with machine_setup: {actions:?}"
+    );
+
+    let before_restart = env.redfish_sim.timepoint();
+    env.run_machine_state_controller_iteration().await;
+
+    let mut txn = env.db_txn().await;
+    let host = mh.host().db_machine(&mut txn).await;
+    assert_eq!(
+        host.current_state(),
+        &ManagedHostState::HostInit {
+            machine_state: MachineState::PollingBiosSetup {
+                retry_count: RETRY_COUNT,
+            },
+        }
+    );
+    drop(txn);
+    let actions = env.redfish_sim.actions_since(&before_restart).all_hosts();
+    assert_eq!(machine_setups(&actions), 0, "{actions:?}");
+    assert_eq!(restarts(&actions), 1, "{actions:?}");
+}
+
 /// When HostInit/PollingBiosSetup is stuck, enter HandleBiosJobFailure recovery.
 #[crate::sqlx_test]
 async fn test_polling_bios_setup_stuck_enters_handle_bios_job_failure(pool: sqlx::PgPool) {
@@ -6951,6 +7034,7 @@ async fn test_legacy_http_boot_wait_migrates_to_shared_bios_repair(pool: sqlx::P
     // runs machine_setup through the common BIOS driver.
     set_host_controller_state_stuck_in(&env, host_id, &stuck_waiting(0), 11).await;
     let checkpoint = env.redfish_sim.timepoint();
+    env.run_machine_state_controller_iteration().await;
     env.run_machine_state_controller_iteration().await;
     env.run_machine_state_controller_iteration().await;
     let actions = env.redfish_sim.actions_since(&checkpoint).all_hosts();
