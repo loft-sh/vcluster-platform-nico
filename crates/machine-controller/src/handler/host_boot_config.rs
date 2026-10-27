@@ -284,7 +284,8 @@ pub(super) async fn run_host_boot_config_stage(
                         HostBootConfigStage::WaitingForBiosJob { bios_config_info },
                     ))
                 }
-                BiosConfigOutcome::WaitingForReboot(reason) => {
+                BiosConfigOutcome::WaitingForBmc(reason)
+                | BiosConfigOutcome::WaitingForReboot(reason) => {
                     Ok(HostBootConfigOutcome::Wait(reason))
                 }
             }
@@ -494,9 +495,9 @@ mod tests {
     use carbide_secrets::test_support::credentials::TestCredentialManager;
     use carbide_test_support::Outcome::*;
     use carbide_test_support::{Case, check_cases_async, value_scenarios};
-    use libredfish::BiosProfileType;
     use libredfish::model::service_root::RedfishVendor;
     use libredfish::model::{BootProgress, BootProgressTypes};
+    use libredfish::{BiosProfileType, RedfishError};
     use model::machine::MachineLastRebootRequested;
     use model::machine_boot_interface::MachineBootInterface;
     use model::test_support::machine_snapshot::managed_host_state_snapshot;
@@ -966,6 +967,79 @@ mod tests {
             },
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn configure_bios_waits_for_an_unanswering_bmc_without_restarting_the_host() {
+        let explicit_target = BootInterfaceTarget::Pair(MachineBootInterface {
+            mac_address: "10:00:00:00:00:01".parse().unwrap(),
+            interface_id: "NIC.Slot.5-1".to_string(),
+        });
+        let redfish_sim = Arc::new(RedfishSim::default());
+        let redfish_client = redfish_sim
+            .create_client("bmc-unavailable-test", None, RedfishAuth::Anonymous, None)
+            .await
+            .unwrap();
+        let mut services = test_services(
+            redfish_sim.clone(),
+            MachineStateHandlerSiteConfig::test_default(),
+        );
+        let mut metrics = MachineMetrics::default();
+        let mut pending_db_writes = DbWriteBatch::new();
+        let mut ctx = StateHandlerContext {
+            services: &mut services,
+            metrics: &mut metrics,
+            pending_db_writes: &mut pending_db_writes,
+        };
+        let mh_snapshot = managed_host_state_snapshot();
+
+        let silent_bmc = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "http://{}/redfish/v1/Systems/1/Pending",
+            silent_bmc.local_addr().unwrap()
+        );
+        let timed_out = libredfish::reqwest::Client::new()
+            .patch(&url)
+            .timeout(Duration::from_millis(50))
+            .send()
+            .await
+            .unwrap_err();
+        let errors = [
+            RedfishError::NetworkError {
+                url: url.clone(),
+                source: timed_out,
+            },
+            RedfishError::HTTPErrorCode {
+                url,
+                status_code: libredfish::reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                response_body: String::new(),
+            },
+        ];
+
+        let before = redfish_sim.timepoint();
+        for error in errors {
+            redfish_sim.fail_next_machine_setup(error);
+            assert!(matches!(
+                run_host_boot_config_stage(
+                    &mut ctx,
+                    &reachability_params(),
+                    redfish_client.as_ref(),
+                    &mh_snapshot,
+                    Some(&explicit_target),
+                    HostBootConfigStage::ConfigureBios { retry_count: 0 },
+                )
+                .await
+                .unwrap(),
+                HostBootConfigOutcome::Wait(_),
+            ));
+        }
+        assert!(
+            !redfish_sim
+                .actions_since(&before)
+                .all_hosts()
+                .iter()
+                .any(|action| matches!(action, RedfishSimAction::Power(_))),
+        );
     }
 
     #[test]

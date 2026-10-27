@@ -65,6 +65,7 @@ struct RedfishSimState {
     /// accepting the write without applying the requested policy.
     lockdown_bmc_applies: Option<bool>,
     next_lockdown_status_error: Option<RedfishError>,
+    next_machine_setup_error: Option<RedfishError>,
     /// Fail one power-state read without changing the host's actual power.
     next_power_state_error: Option<String>,
     /// Fail the next matching power action before changing the host's power.
@@ -420,6 +421,10 @@ impl RedfishSim {
     /// Fail one lockdown observation without changing the actual policy.
     pub fn fail_next_lockdown_status(&self, error: RedfishError) {
         self.state.lock().unwrap().next_lockdown_status_error = Some(error);
+    }
+
+    pub fn fail_next_machine_setup(&self, error: RedfishError) {
+        self.state.lock().unwrap().next_machine_setup_error = Some(error);
     }
 
     /// Set one simulated host's power state, as a BMC would report it; the
@@ -976,6 +981,9 @@ impl Redfish for RedfishSimClient {
     ) -> libredfish::RedfishFuture<'a, Result<Option<String>, RedfishError>> {
         Box::pin(async move {
             let mut state = self.state.lock().unwrap();
+            if let Some(error) = state.next_machine_setup_error.take() {
+                return Err(error);
+            }
             let job_id = state.machine_setup_bios_job_id.clone();
             let host_state = state.hosts.get_mut(&self._host).unwrap();
             // `machine_setup` re-asserts the platform BIOS config, which
