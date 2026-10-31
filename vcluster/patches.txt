@@ -14,3 +14,4 @@ patch/v2.4/bios-applied-bootprogress none
 patch/v2.4/bios-config-bmc-unavailable none
 patch/v2.4/libredfish-lenovo-skip-unchanged-boot-order none
 patch/v2.4/bios-config-restart-own-step none
+patch/v2.4/vault-kubernetes-auth-mount pending
