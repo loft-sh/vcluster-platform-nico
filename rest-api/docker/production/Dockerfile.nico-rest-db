@@ -44,6 +44,9 @@ RUN VERSION=${VERSION} && \
         -o /app/migrations \
         ./cmd/migrations
 
+RUN --mount=type=bind,source=docker/production/distrusted-roots.sh,target=/tmp/distrusted-roots.sh \
+    sh /tmp/distrusted-roots.sh filter /etc/ssl/certs/ca-certificates.crt
+
 # Final stage
 FROM nvcr.io/nvidia/distroless/go:v4.0.8 AS final
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
