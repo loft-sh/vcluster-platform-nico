@@ -312,3 +312,14 @@ jobs:
           for tgz in out/*.tgz; do
             helm push "$tgz" "oci://${REGISTRY}/charts"
           done
+
+      - name: Package and push NICo charts
+        run: |
+          CHART_VERSION="${VERSION#v}"
+          mkdir -p core
+          for c in helm helm/rest/nico-rest helm/rest/nico-rest-site-agent rest-api/temporal-helm/temporal; do
+            helm package "$c" --version "$CHART_VERSION" -d core/
+          done
+          for tgz in core/*.tgz; do
+            helm push "$tgz" "oci://${REGISTRY}/charts"
+          done
